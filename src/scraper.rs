@@ -14,7 +14,11 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 lazy_static! {
-    static ref HTTP_CLI: reqwest::Client = reqwest::Client::new();
+    static ref HTTP_CLI: reqwest::Client = reqwest::ClientBuilder::new()
+        .gzip(true)
+        .deflate(true)
+        .build()
+        .unwrap();
     static ref XP_FACTORY: Factory = Factory::new();
 }
 
@@ -120,12 +124,12 @@ async fn download(url: &str) -> Result<String> {
         .await?;
 
     match resp.headers().get(CONTENT_TYPE) {
-        Some(c) if c == "application/x-gzip" => {
+        Some(c) if c == "application/x-gzip" || c == "application/gzip" => {
             let compressed = resp.bytes().await?;
-            let mut buf = Vec::with_capacity(compressed.len());
             let mut gz = GzDecoder::new(&compressed[..]);
-            let n = gz.read_to_end(&mut buf)?;
-            Ok(String::from_utf8_lossy(&buf[0..n]).to_string())
+            let mut page = String::new();
+            gz.read_to_string(&mut page)?;
+            Ok(page)
         }
         _ => Ok(resp.text().await?),
     }

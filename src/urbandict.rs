@@ -83,6 +83,8 @@ impl Scrapable for Urbandict {
         let tx_record = self.tx_record.clone();
 
         Box::new(move |page: &str| {
+            println!(">>>>>>>>>>>>> {}", page.len()); // TODO: remove
+
             let document = Document::from(page);
 
             let panels = document

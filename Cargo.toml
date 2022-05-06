@@ -1,7 +1,6 @@
 [package]
 name = "sws"
 version = "0.1.0"
-authors = ["Romain Leroux <romain@leroux.dev>"]
 edition = "2018"
 
 [dependencies]
@@ -11,7 +10,7 @@ csv = "1"
 flate2 = "1"
 futures = "0.3"
 lazy_static = "1"
-reqwest = "0.11"
+reqwest = { version = "0.11", features = ["gzip", "deflate"] }
 select = "0.5.0"
 serde = { version = "1", features = ["derive"] }
 structopt = "0.3"
