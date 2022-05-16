@@ -9,7 +9,6 @@ use futures::{future, join, stream, StreamExt};
 use lazy_static::lazy_static;
 use reqwest::header::{CONTENT_TYPE, USER_AGENT};
 use sxd_document::{dom, parser};
-use sxd_xpath::{Context, Factory, Value};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -19,18 +18,24 @@ lazy_static! {
         .deflate(true)
         .build()
         .unwrap();
-    static ref XP_FACTORY: Factory = Factory::new();
+    static ref XP_FACTORY: sxd_xpath::Factory = sxd_xpath::Factory::new();
 }
 
 pub trait Scrapable {
-    fn site_map(&self) -> &str;
+    type Config: Send + Clone + 'static;
 
-    fn accept(&self, sm: &Sitemap, url: &str) -> bool;
+    fn new(config: &Self::Config) -> anyhow::Result<Self>
+    where
+        Self: Sized;
 
-    fn parser(&self) -> Box<dyn Fn(&str) + Send>;
+    fn sitemap(&self) -> &str;
+
+    fn accept(&self, sm: Sitemap, url: &str) -> bool;
+
+    fn parse(&mut self, page: &str);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Sitemap {
     Index,
     Urlset,
@@ -68,7 +73,7 @@ where
 
         let sm_kind = Sitemap::new(&document.root());
 
-        let mut context = Context::new();
+        let mut context = sxd_xpath::Context::new();
         context.set_namespace("sm", "http://www.sitemaps.org/schemas/sitemap/0.9");
 
         let xpath = XP_FACTORY
@@ -76,13 +81,13 @@ where
             .ok_or_else(|| anyhow!("Missing XPath"))?;
 
         let value = xpath.evaluate(&context, document.root())?;
-        if let Value::Nodeset(nodes) = value {
+        if let sxd_xpath::Value::Nodeset(nodes) = value {
             match sm_kind {
                 Sitemap::Index => {
                     let urls = nodes
                         .iter()
                         .map(|node| node.string_value())
-                        .filter(|sm_url| spec.accept(&sm_kind, &sm_url))
+                        .filter(|sm_url| spec.accept(sm_kind, &sm_url))
                         .map(|url| (url, tx_url.clone()));
 
                     let mut err = Ok::<(), Error>(());
@@ -101,7 +106,7 @@ where
                 Sitemap::Urlset => {
                     for node in nodes {
                         let page_url = node.string_value();
-                        if spec.accept(&sm_kind, &page_url) {
+                        if spec.accept(sm_kind, &page_url) {
                             tx_url.send(page_url)?;
                         }
                     }
@@ -118,6 +123,7 @@ async fn download(url: &str) -> Result<String> {
         .get(url)
         .header(
             USER_AGENT,
+            // TODO: make configurable
             "Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0",
         )
         .send()
@@ -148,7 +154,8 @@ fn until_err<T, E>(
     }
 }
 
-pub async fn scrap_site<T>(spec: T) -> Result<()>
+// TODO: also inject a SwsConfig (where user-agent etc can be defined)
+pub async fn crawl_site<T>(config: &T::Config) -> anyhow::Result<()>
 where
     T: Scrapable,
 {
@@ -158,11 +165,17 @@ where
     let mut workers = vec![];
     for _ in 0..4 {
         let rx_page_c = rx_page.clone();
-        let parse = spec.parser();
-        let worker = thread::spawn(move || rx_page_c.into_iter().for_each(|page| parse(&page)));
+        let config = config.clone();
+        let worker = thread::spawn(move || {
+            let mut scraper = <T as Scrapable>::new(&config).unwrap();
+            for page in rx_page_c.into_iter() {
+                scraper.parse(&page);
+            }
+        });
         workers.push(worker);
     }
 
+    let scraper = <T as Scrapable>::new(&config)?;
     let (f1, f2) = join!(
         async move {
             let mut err = Ok::<(), Error>(());
@@ -177,7 +190,7 @@ where
 
             err
         },
-        gather_urls(&spec, spec.site_map(), tx_url)
+        gather_urls(&scraper, scraper.sitemap(), tx_url)
     );
 
     f1?;
