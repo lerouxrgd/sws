@@ -1468,22 +1468,40 @@ name = "sws"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "structopt",
+ "sws-crawler",
+ "sws-lua",
+ "tokio",
+]
+
+[[package]]
+name = "sws-crawler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "crossbeam-channel",
- "csv",
  "flate2",
  "futures",
  "lazy_static",
- "mlua",
- "once_cell",
  "reqwest",
- "serde",
- "serde_json",
- "structopt",
- "sws-scraper",
  "sxd-document",
  "sxd-xpath",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "sws-lua"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "csv",
+ "mlua",
+ "once_cell",
+ "serde",
+ "sws-crawler",
+ "sws-scraper",
 ]
 
 [[package]]

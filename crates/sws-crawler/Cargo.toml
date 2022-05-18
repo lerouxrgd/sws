@@ -1,0 +1,18 @@
+[package]
+name = "sws-crawler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+crossbeam-channel = "0.5"
+flate2 = "1"
+futures = "0.3"
+lazy_static = "1"
+reqwest = { version = "0.11", features = ["gzip", "deflate"] }
+# serde = { version = "1", features = ["derive"] }
+# serde_json = "1"
+sxd-document = "0.3"
+sxd-xpath = "0.4"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"

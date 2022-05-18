@@ -1,16 +1,13 @@
 use std::path::PathBuf;
 use std::rc::Rc;
-// use std::sync::mpsc::{channel, Sender};
-// use std::sync::Arc;
 use std::{fs, thread};
 
 use crossbeam_channel::Sender;
 use mlua::{Function, Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
+use sws_crawler::{Scrapable, Sitemap};
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
-
-use crate::crawler::{Scrapable, Sitemap};
 
 static TX_CSV_WRITER: OnceCell<Sender<csv::StringRecord>> = OnceCell::new();
 
@@ -208,6 +205,7 @@ impl Scrapable for LuaScraper {
                 .unwrap();
             thread::spawn(move || {
                 while let Ok(record) = rx_record.recv() {
+                    // TODO: log error
                     wtr.write_record(record.into_iter()).ok();
                 }
             });
