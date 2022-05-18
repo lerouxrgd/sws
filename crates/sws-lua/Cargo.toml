@@ -1,5 +1,5 @@
 [package]
-name = "sws"
+name = "sws-lua"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,17 +7,8 @@ edition = "2021"
 anyhow = "1"
 crossbeam-channel = "0.5"
 csv = "1"
-flate2 = "1"
-futures = "0.3"
-lazy_static = "1"
 mlua = { version = "0.7", features = ["luajit", "vendored", "serialize"] }
 once_cell = "1"
-reqwest = { version = "0.11", features = ["gzip", "deflate"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-structopt = "0.3"
 sws-scraper = { path = "../sws-scraper" }
-sxd-document = "0.3"
-sxd-xpath = "0.4"
-tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1"
+sws-crawler = { path = "../sws-crawler" }

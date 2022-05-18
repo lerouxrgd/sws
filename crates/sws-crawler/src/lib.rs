@@ -154,7 +154,7 @@ fn until_err<T, E>(
     }
 }
 
-// TODO: also inject a SwsConfig (where user-agent etc can be defined)
+// TODO: also inject a CrawlerConfig (where user-agent etc can be defined)
 pub async fn crawl_site<T>(config: &T::Config) -> anyhow::Result<()>
 where
     T: Scrapable,
