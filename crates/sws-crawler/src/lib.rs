@@ -1,13 +1,14 @@
 use std::future::Future;
 use std::io::prelude::*;
 use std::pin::Pin;
-use std::thread;
+use std::{cmp, thread};
 
 use anyhow::{anyhow, Error, Result};
 use flate2::read::GzDecoder;
 use futures::{future, join, stream, StreamExt};
 use lazy_static::lazy_static;
 use reqwest::header::{CONTENT_TYPE, USER_AGENT};
+use serde::{Deserialize, Serialize};
 use sxd_document::{dom, parser};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -58,6 +59,7 @@ impl Sitemap {
 }
 
 fn gather_urls<'a, T>(
+    config: &'a CrawlerConfig,
     spec: &'a T,
     sitemap_url: &'a str,
     tx_url: mpsc::UnboundedSender<String>,
@@ -66,7 +68,7 @@ where
     T: Scrapable,
 {
     Box::pin(async move {
-        let sitemap_xml = download(sitemap_url).await?;
+        let sitemap_xml = download(config, sitemap_url).await?;
 
         let package = parser::parse(&sitemap_xml)?;
         let document = package.as_document();
@@ -94,7 +96,7 @@ where
 
                     stream::iter(urls)
                         .map(|(sm_url, tx_url)| async move {
-                            gather_urls(spec, &sm_url, tx_url).await
+                            gather_urls(config, spec, &sm_url, tx_url).await
                         })
                         .buffer_unordered(100)
                         .scan(&mut err, until_err)
@@ -118,14 +120,10 @@ where
     })
 }
 
-async fn download(url: &str) -> Result<String> {
+async fn download(config: &CrawlerConfig, url: &str) -> Result<String> {
     let resp = HTTP_CLI
         .get(url)
-        .header(
-            USER_AGENT,
-            // TODO: make configurable
-            "Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0",
-        )
+        .header(USER_AGENT, &config.user_agent)
         .send()
         .await?;
 
@@ -154,35 +152,60 @@ fn until_err<T, E>(
     }
 }
 
-// TODO: also inject a CrawlerConfig (where user-agent etc can be defined)
-pub async fn crawl_site<T>(config: &T::Config) -> anyhow::Result<()>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrawlerConfig {
+    pub user_agent: String,
+    pub page_buffer: usize,
+    pub concurrent_downloads: usize,
+    pub num_workers: usize,
+}
+
+impl Default for CrawlerConfig {
+    fn default() -> Self {
+        Self {
+            user_agent: format!("SWSbot/{}", env!("CARGO_PKG_VERSION")),
+            page_buffer: 10_000,
+            concurrent_downloads: 100,
+            num_workers: cmp::max(1, num_cpus::get() - 2),
+        }
+    }
+}
+
+pub async fn crawl_site<T>(
+    crawler_conf: &CrawlerConfig,
+    scraper_conf: &T::Config,
+) -> anyhow::Result<()>
 where
     T: Scrapable,
 {
     let (tx_url, rx_url) = mpsc::unbounded_channel::<String>();
-    let (tx_page, rx_page) = crossbeam_channel::bounded::<String>(10_000);
+    let (tx_page, rx_page) = crossbeam_channel::bounded::<String>(crawler_conf.page_buffer);
 
     let mut workers = vec![];
-    for _ in 0..4 {
+    for _ in 0..crawler_conf.num_workers {
         let rx_page_c = rx_page.clone();
-        let config = config.clone();
+        let scraper_conf = scraper_conf.clone();
         let worker = thread::spawn(move || {
-            let mut scraper = <T as Scrapable>::new(&config).unwrap();
-            for page in rx_page_c.into_iter() {
-                scraper.parse(&page);
+            {
+                let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
+                for page in rx_page_c.into_iter() {
+                    scraper.parse(&page); // TODO: could return error
+                }
+                Ok::<(), Error>(())
             }
+            .map_err(|e| e) // TODO: log/process/fail here ?
         });
         workers.push(worker);
     }
 
-    let scraper = <T as Scrapable>::new(&config)?;
+    let scraper = <T as Scrapable>::new(&scraper_conf)?;
     let (f1, f2) = join!(
         async move {
             let mut err = Ok::<(), Error>(());
 
             UnboundedReceiverStream::new(rx_url)
-                .map(|url| async move { download(&url).await })
-                .buffer_unordered(100)
+                .map(|url| async move { download(crawler_conf, &url).await })
+                .buffer_unordered(crawler_conf.concurrent_downloads)
                 .scan(&mut err, until_err)
                 .map(|page| tx_page.send(page).ok())
                 .collect::<Vec<_>>()
@@ -190,14 +213,14 @@ where
 
             err
         },
-        gather_urls(&scraper, scraper.sitemap(), tx_url)
+        gather_urls(crawler_conf, &scraper, scraper.sitemap(), tx_url)
     );
 
     f1?;
     f2?;
 
     for w in workers {
-        w.join().unwrap();
+        w.join().unwrap()?;
     }
 
     Ok(())
