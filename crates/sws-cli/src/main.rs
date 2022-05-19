@@ -1,10 +1,10 @@
 use std::fs::File;
-use std::io;
 use std::path::PathBuf;
+use std::{env, io};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
-use sws_crawler::{crawl_site, CrawlerConfig};
+use sws_crawler::{crawl_site, CrawlerConfig, OnDownloadError, OnScrapError, OnXmlError};
 use sws_lua::{LuaScraper, LuaScraperConfig};
 use tokio::runtime;
 
@@ -48,6 +48,18 @@ pub struct ScrapArgs {
     /// Override crawler's number of CPU workers used to parse pages
     #[clap(long)]
     pub num_workers: Option<usize>,
+    /// Override crawler's download error handling strategy
+    #[clap(arg_enum, long)]
+    pub on_dl_error: Option<OnDownloadError>,
+    /// Override crawler's xml error handling strategy
+    #[clap(arg_enum, long)]
+    pub on_xml_error: Option<OnXmlError>,
+    /// Override crawler's scrap error handling strategy
+    #[clap(arg_enum, long)]
+    pub on_scrap_error: Option<OnScrapError>,
+    /// When quiet no logs are outputted
+    #[clap(long, short)]
+    pub quiet: bool,
 }
 
 impl TryFrom<&ScrapArgs> for CrawlerConfig {
@@ -71,6 +83,15 @@ impl TryFrom<&ScrapArgs> for CrawlerConfig {
         if let Some(num_workers) = args.num_workers {
             conf.num_workers = num_workers;
         }
+        if let Some(on_dl_error) = args.on_dl_error {
+            conf.on_dl_error = on_dl_error;
+        }
+        if let Some(on_xml_error) = args.on_xml_error {
+            conf.on_xml_error = on_xml_error;
+        }
+        if let Some(on_scrap_error) = args.on_scrap_error {
+            conf.on_scrap_error = on_scrap_error;
+        }
         Ok(conf)
     }
 }
@@ -87,8 +108,15 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+
     match args.cmd {
-        SubCommand::Scrap(args) => scrap(args),
+        SubCommand::Scrap(args) => {
+            if !args.quiet {
+                env::set_var("RUST_LOG", "sws_crawler=warn,sws_lua=warn");
+                env_logger::init();
+            }
+            scrap(args)
+        }
         SubCommand::Completion => {
             generate(Shell::Bash, &mut Args::command(), "sws", &mut io::stdout());
             Ok(())

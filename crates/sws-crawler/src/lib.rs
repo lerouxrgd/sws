@@ -1,11 +1,13 @@
 use std::future::Future;
 use std::io::prelude::*;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{cmp, thread};
 
 use anyhow::{anyhow, Error, Result};
 use flate2::read::GzDecoder;
-use futures::{future, join, stream, StreamExt};
+use futures::{future, stream, try_join, StreamExt};
 use lazy_static::lazy_static;
 use reqwest::header::{CONTENT_TYPE, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -23,7 +25,7 @@ lazy_static! {
 }
 
 pub trait Scrapable {
-    type Config: Send + Clone + 'static;
+    type Config: Clone + Send + 'static;
 
     fn new(config: &Self::Config) -> anyhow::Result<Self>
     where
@@ -33,7 +35,9 @@ pub trait Scrapable {
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool;
 
-    fn parse(&mut self, page: &str);
+    fn scrap(&mut self, page: &str) -> anyhow::Result<()>;
+
+    fn finalizer(&mut self) {}
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -60,56 +64,88 @@ impl Sitemap {
 
 fn gather_urls<'a, T>(
     config: &'a CrawlerConfig,
-    spec: &'a T,
+    scraper: &'a T,
     sitemap_url: &'a str,
     tx_url: mpsc::UnboundedSender<String>,
-) -> Pin<Box<dyn 'a + Future<Output = Result<()>>>>
+) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>>
 where
     T: Scrapable,
 {
     Box::pin(async move {
         let sitemap_xml = download(config, sitemap_url).await?;
 
-        let package = parser::parse(&sitemap_xml)?;
+        let package = match parser::parse(&sitemap_xml) {
+            Ok(package) => package,
+            Err(e) => match config.on_xml_error {
+                OnXmlError::SkipAndLog => {
+                    log::warn!("Skipping XML: {sitemap_url} got: {e}");
+                    return Ok(());
+                }
+                OnXmlError::Fail => return Err(anyhow!("Couldn't parse {sitemap_url} got: {e}")),
+            },
+        };
         let document = package.as_document();
 
         let sm_kind = Sitemap::new(&document.root());
 
         let mut context = sxd_xpath::Context::new();
         context.set_namespace("sm", "http://www.sitemaps.org/schemas/sitemap/0.9");
-
         let xpath = XP_FACTORY
             .build("//sm:loc")?
             .ok_or_else(|| anyhow!("Missing XPath"))?;
+        let value = match xpath.evaluate(&context, document.root()) {
+            Ok(value) => value,
+            Err(e) => match config.on_xml_error {
+                OnXmlError::SkipAndLog => {
+                    log::warn!("Skipping XML: {sitemap_url} xpath {xpath:?} got: {e}");
+                    return Ok(());
+                }
+                OnXmlError::Fail => {
+                    return Err(anyhow!(
+                        "Couldn't evaluate {xpath:?} for {sitemap_url} got: {e}"
+                    ))
+                }
+            },
+        };
 
-        let value = xpath.evaluate(&context, document.root())?;
         if let sxd_xpath::Value::Nodeset(nodes) = value {
             match sm_kind {
                 Sitemap::Index => {
                     let urls = nodes
                         .iter()
                         .map(|node| node.string_value())
-                        .filter(|sm_url| spec.accept(sm_kind, &sm_url))
+                        .filter(|sm_url| scraper.accept(sm_kind, &sm_url))
                         .map(|url| (url, tx_url.clone()));
 
-                    let mut err = Ok::<(), Error>(());
-
-                    stream::iter(urls)
+                    let stream = stream::iter(urls)
                         .map(|(sm_url, tx_url)| async move {
-                            gather_urls(config, spec, &sm_url, tx_url).await
+                            gather_urls(config, scraper, &sm_url, tx_url).await
                         })
-                        .buffer_unordered(100)
-                        .scan(&mut err, until_err)
-                        .collect::<Vec<_>>()
-                        .await;
+                        .buffer_unordered(config.concurrent_downloads);
 
-                    err?;
+                    match config.on_dl_error {
+                        OnDownloadError::Fail => {
+                            let mut err = Ok::<(), Error>(());
+                            stream.scan(&mut err, until_err).collect::<Vec<_>>().await;
+                            err?
+                        }
+                        OnDownloadError::SkipAndLog => {
+                            stream
+                                .filter_map(|dl| async move {
+                                    dl.map_err(|e| log::warn!("Skipping URL: {e}")).ok()
+                                })
+                                .collect::<Vec<_>>()
+                                .await;
+                        }
+                    }
                 }
                 Sitemap::Urlset => {
                     for node in nodes {
                         let page_url = node.string_value();
-                        if spec.accept(sm_kind, &page_url) {
-                            tx_url.send(page_url)?;
+                        if scraper.accept(sm_kind, &page_url) {
+                            if let Err(e) = tx_url.send(page_url) {
+                                log::error!("Couldn't send page to downloader: {e}");
+                            }
                         }
                     }
                 }
@@ -158,6 +194,9 @@ pub struct CrawlerConfig {
     pub page_buffer: usize,
     pub concurrent_downloads: usize,
     pub num_workers: usize,
+    pub on_dl_error: OnDownloadError,
+    pub on_xml_error: OnXmlError,
+    pub on_scrap_error: OnScrapError,
 }
 
 impl Default for CrawlerConfig {
@@ -167,8 +206,32 @@ impl Default for CrawlerConfig {
             page_buffer: 10_000,
             concurrent_downloads: 100,
             num_workers: cmp::max(1, num_cpus::get() - 2),
+            on_dl_error: OnDownloadError::SkipAndLog,
+            on_xml_error: OnXmlError::SkipAndLog,
+            on_scrap_error: OnScrapError::SkipAndLog,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
+pub enum OnDownloadError {
+    Fail,
+    SkipAndLog,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
+pub enum OnScrapError {
+    Fail,
+    SkipAndLog,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
+pub enum OnXmlError {
+    Fail,
+    SkipAndLog,
 }
 
 pub async fn crawl_site<T>(
@@ -181,47 +244,86 @@ where
     let (tx_url, rx_url) = mpsc::unbounded_channel::<String>();
     let (tx_page, rx_page) = crossbeam_channel::bounded::<String>(crawler_conf.page_buffer);
 
+    // Workers
+
+    let stop = Arc::new(AtomicBool::new(false));
     let mut workers = vec![];
     for _ in 0..crawler_conf.num_workers {
-        let rx_page_c = rx_page.clone();
+        let rx_page = rx_page.clone();
         let scraper_conf = scraper_conf.clone();
+        let crawler_conf = crawler_conf.clone();
+        let stop = stop.clone();
         let worker = thread::spawn(move || {
-            {
-                let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
-                for page in rx_page_c.into_iter() {
-                    scraper.parse(&page); // TODO: could return error
+            let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
+            for page in rx_page.into_iter() {
+                if stop.load(Ordering::Relaxed) {
+                    break;
                 }
-                Ok::<(), Error>(())
+                match scraper.scrap(&page) {
+                    Ok(()) => (),
+                    Err(e) => match crawler_conf.on_scrap_error {
+                        OnScrapError::SkipAndLog => {
+                            log::error!("Skipping page scrap: {e}");
+                        }
+                        OnScrapError::Fail => {
+                            stop.store(true, Ordering::SeqCst);
+                            scraper.finalizer();
+                            return Err(e);
+                        }
+                    },
+                }
             }
-            .map_err(|e| e) // TODO: log/process/fail here ?
+            Ok::<(), Error>(())
         });
         workers.push(worker);
     }
+    let workers = async move {
+        tokio::task::spawn_blocking(|| {
+            for w in workers {
+                w.join().unwrap()?;
+            }
+            Ok::<(), Error>(())
+        })
+        .await?
+    };
+
+    // Downloader
+
+    let downloader = async move {
+        let stream = UnboundedReceiverStream::new(rx_url)
+            .map(|url| async move { download(crawler_conf, &url).await })
+            .buffer_unordered(crawler_conf.concurrent_downloads);
+
+        match crawler_conf.on_dl_error {
+            OnDownloadError::Fail => {
+                let mut err = Ok::<(), Error>(());
+                stream
+                    .scan(&mut err, until_err)
+                    .map(|page| tx_page.send(page).ok())
+                    .collect::<Vec<_>>()
+                    .await;
+                err
+            }
+            OnDownloadError::SkipAndLog => {
+                stream
+                    .filter_map(
+                        |dl| async move { dl.map_err(|e| log::warn!("Skipping URL: {e}")).ok() },
+                    )
+                    .map(|page| tx_page.send(page).ok())
+                    .collect::<Vec<_>>()
+                    .await;
+                Ok(())
+            }
+        }
+    };
+
+    // Crawler
 
     let scraper = <T as Scrapable>::new(&scraper_conf)?;
-    let (f1, f2) = join!(
-        async move {
-            let mut err = Ok::<(), Error>(());
+    let crawler = gather_urls(crawler_conf, &scraper, scraper.sitemap(), tx_url);
 
-            UnboundedReceiverStream::new(rx_url)
-                .map(|url| async move { download(crawler_conf, &url).await })
-                .buffer_unordered(crawler_conf.concurrent_downloads)
-                .scan(&mut err, until_err)
-                .map(|page| tx_page.send(page).ok())
-                .collect::<Vec<_>>()
-                .await;
+    // Run all tasks
 
-            err
-        },
-        gather_urls(crawler_conf, &scraper, scraper.sitemap(), tx_url)
-    );
-
-    f1?;
-    f2?;
-
-    for w in workers {
-        w.join().unwrap()?;
-    }
-
+    try_join!(workers, downloader, crawler)?;
     Ok(())
 }

@@ -2,14 +2,14 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::{fs, thread};
 
-use crossbeam_channel::Sender;
+use crossbeam_channel::{bounded, select, unbounded, Sender};
 use mlua::{Function, Lua, LuaSerdeExt, MetaMethod, UserData, UserDataMethods};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use sws_crawler::{Scrapable, Sitemap};
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
 
-static TX_CSV_WRITER: OnceCell<Sender<csv::StringRecord>> = OnceCell::new();
+static TX_CSV_WRITER: OnceCell<(Sender<csv::StringRecord>, Sender<()>)> = OnceCell::new();
 
 pub struct LuaHtml(Html);
 
@@ -42,6 +42,7 @@ impl UserData for LuaElementRef {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct LuaSitemap(Sitemap);
 
 impl UserData for LuaSitemap {
@@ -198,19 +199,29 @@ impl Scrapable for LuaScraper {
             .unwrap_or_else(|| Ok(CsvWriterConfig::default()))?;
         drop(globals);
 
-        let tx_record = TX_CSV_WRITER.get_or_init(move || {
-            let (tx_record, rx_record) = crossbeam_channel::unbounded::<csv::StringRecord>();
-            let mut wtr = csv::WriterBuilder::from(&csv_config)
-                .from_path(&config.csv_file)
-                .unwrap();
-            thread::spawn(move || {
-                while let Ok(record) = rx_record.recv() {
-                    // TODO: log error
-                    wtr.write_record(record.into_iter()).ok();
+        let (tx_record, _) = TX_CSV_WRITER.get_or_try_init::<_, anyhow::Error>(move || {
+            let (tx_record, rx_record) = unbounded::<csv::StringRecord>();
+            let (tx_stop, rx_stop) = bounded::<()>(1);
+
+            let mut wtr = csv::WriterBuilder::from(&csv_config).from_path(&config.csv_file)?;
+            thread::spawn(move || loop {
+                select! {
+                    recv(rx_stop) -> _ => {
+                        wtr.flush().ok();
+                        break;
+                    },
+                    recv(rx_record) -> msg => {
+                        msg.map(|record| wtr.write_record(record.into_iter()))
+                            .map(|res| if let Err(e) = res {
+                                log::error!("Couldn't write record: {e}");
+                            })
+                            .ok();
+                    }
                 }
             });
-            tx_record
-        });
+
+            Ok((tx_record, tx_stop))
+        })?;
         let context = LuaSwsContext(Rc::new(SwsContext::new(tx_record.clone())));
 
         Ok(Self {
@@ -220,22 +231,22 @@ impl Scrapable for LuaScraper {
         })
     }
 
+    fn finalizer(&mut self) {
+        TX_CSV_WRITER.get().map(|(_, tx_stop)| tx_stop.send(()));
+    }
+
     fn sitemap(&self) -> &str {
         self.sitemap_url.as_ref()
     }
 
-    fn parse(&mut self, page: &str) {
+    fn scrap(&mut self, page: &str) -> anyhow::Result<()> {
         let page = LuaHtml(Html::parse_document(page));
         let process_page: Function = self
             .lua
             .globals()
             .get("processPage")
             .expect("Function `processPage` not found"); // Ensured in constructor
-
-        // TODO: log instead of unwrap ?
-        process_page
-            .call::<_, ()>((page, self.context.clone()))
-            .unwrap();
+        Ok(process_page.call::<_, ()>((page, self.context.clone()))?)
     }
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool {
@@ -246,7 +257,12 @@ impl Scrapable for LuaScraper {
             .get("acceptUrl")
             .expect("Function `acceptUrl` not found"); // Ensured in constructor
 
-        // TODO: log instead of unwrap ?
-        accept_url.call::<_, bool>((sm, url.to_string())).unwrap()
+        match accept_url.call::<_, bool>((sm, url.to_string())) {
+            Ok(accepted) => accepted,
+            Err(e) => {
+                log::error!("Couldn't process {sm:?} {url}: {e}");
+                false
+            }
+        }
     }
 }
