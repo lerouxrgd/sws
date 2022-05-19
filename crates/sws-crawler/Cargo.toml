@@ -5,10 +5,12 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+clap = { version = "3", optional = true }
 crossbeam-channel = "0.5"
 flate2 = "1"
 futures = "0.3"
 lazy_static = "1"
+log = "0.4"
 num_cpus = "1"
 reqwest = { version = "0.11", features = ["gzip", "deflate"] }
 serde = { version = "1", features = ["derive"] }
@@ -16,3 +18,6 @@ sxd-document = "0.3"
 sxd-xpath = "0.4"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
+
+[features]
+clap = ["dep:clap"]
