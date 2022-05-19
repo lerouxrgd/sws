@@ -5,11 +5,12 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "3", features = ["derive"] }
+clap = { version = "3", features = ["derive", "env"] }
 clap_complete = "3"
 # csv = "1"
 # serde = { version = "1", features = ["derive"] }
 # serde_json = "1"
+serde_yaml = "0.8"
 sws-crawler = { path = "../sws-crawler" }
 sws-lua = { path = "../sws-lua" }
 tokio = { version = "1", features = ["full"] }

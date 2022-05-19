@@ -90,13 +90,13 @@ impl UserData for LuaSwsContext {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CsvWriterConfig {
     #[serde(default = "default_csv_delimiter")]
-    delimiter: char,
+    pub delimiter: char,
     #[serde(default)]
-    escape: Option<char>,
+    pub escape: Option<char>,
     #[serde(default)]
-    flexible: bool,
+    pub flexible: bool,
     #[serde(default = "default_csv_terminator")]
-    terminator: CsvTerminator,
+    pub terminator: CsvTerminator,
 }
 
 impl Default for CsvWriterConfig {
