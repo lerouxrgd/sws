@@ -236,33 +236,35 @@ where
 
     let stop = Arc::new(AtomicBool::new(false));
     let mut workers = vec![];
-    for _ in 0..crawler_conf.num_workers {
+    for id in 0..crawler_conf.num_workers {
         let rx_page = rx_page.clone();
         let scraper_conf = scraper_conf.clone();
         let crawler_conf = crawler_conf.clone();
         let stop = stop.clone();
-        let worker = thread::spawn(move || {
-            let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
-            for page in rx_page.into_iter() {
-                if stop.load(Ordering::Relaxed) {
-                    break;
+        let worker = thread::Builder::new()
+            .name(format!("{id}"))
+            .spawn(move || {
+                let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
+                for page in rx_page.into_iter() {
+                    if stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    match scraper.scrap(&page) {
+                        Ok(()) => (),
+                        Err(e) => match crawler_conf.on_scrap_error {
+                            OnError::SkipAndLog => {
+                                log::error!("Skipping page scrap: {e}");
+                            }
+                            OnError::Fail => {
+                                stop.store(true, Ordering::SeqCst);
+                                scraper.finalizer();
+                                return Err(e);
+                            }
+                        },
+                    }
                 }
-                match scraper.scrap(&page) {
-                    Ok(()) => (),
-                    Err(e) => match crawler_conf.on_scrap_error {
-                        OnError::SkipAndLog => {
-                            log::error!("Skipping page scrap: {e}");
-                        }
-                        OnError::Fail => {
-                            stop.store(true, Ordering::SeqCst);
-                            scraper.finalizer();
-                            return Err(e);
-                        }
-                    },
-                }
-            }
-            Ok::<(), Error>(())
-        });
+                Ok::<(), Error>(())
+            })?;
         workers.push(worker);
     }
     let workers = async move {

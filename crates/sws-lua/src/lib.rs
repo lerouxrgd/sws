@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use sws_crawler::{Scrapable, Sitemap};
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
 
+pub mod writer;
+
 static TX_CSV_WRITER: OnceCell<(Sender<csv::StringRecord>, Sender<()>)> = OnceCell::new();
 
 pub struct LuaHtml(Html);
@@ -85,68 +87,14 @@ impl UserData for LuaSwsContext {
             ctx.0.tx_writer.send(record.0).ok();
             Ok(())
         });
-    }
-}
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CsvWriterConfig {
-    #[serde(default = "default_csv_delimiter")]
-    pub delimiter: char,
-    #[serde(default)]
-    pub escape: Option<char>,
-    #[serde(default)]
-    pub flexible: bool,
-    #[serde(default = "default_csv_terminator")]
-    pub terminator: CsvTerminator,
-}
-
-impl Default for CsvWriterConfig {
-    fn default() -> Self {
-        Self {
-            delimiter: default_csv_delimiter(),
-            escape: None,
-            flexible: false,
-            terminator: default_csv_terminator(),
-        }
-    }
-}
-
-fn default_csv_delimiter() -> char {
-    ','
-}
-
-fn default_csv_terminator() -> CsvTerminator {
-    CsvTerminator::Any('\n')
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum CsvTerminator {
-    CRLF,
-    Any(char),
-}
-
-impl From<CsvTerminator> for csv::Terminator {
-    fn from(source: CsvTerminator) -> Self {
-        match source {
-            CsvTerminator::CRLF => Self::CRLF,
-            CsvTerminator::Any(c) => Self::Any(c as u8),
-        }
-    }
-}
-
-impl From<&CsvWriterConfig> for csv::WriterBuilder {
-    fn from(c: &CsvWriterConfig) -> Self {
-        let mut builder = csv::WriterBuilder::new();
-        builder.delimiter(c.delimiter as u8);
-        builder.terminator(c.terminator.into());
-        builder.flexible(c.flexible);
-        if let Some(escape) = c.escape {
-            builder.double_quote(false);
-            builder.escape(escape as u8);
-        } else {
-            builder.double_quote(true);
-        }
-        builder
+        methods.add_method("workerId", |_, _, ()| {
+            let id = thread::current()
+                .name()
+                .map(String::from)
+                .ok_or_else(|| mlua::Error::RuntimeError("Missing thread name".into()))?;
+            Ok(id)
+        });
     }
 }
 
@@ -193,10 +141,10 @@ impl Scrapable for LuaScraper {
         let _: Function = globals.get("acceptUrl")?;
         let _: Function = globals.get("processPage")?;
         let sitemap_url: String = globals.get("sitemapUrl")?;
-        let csv_config: CsvWriterConfig = globals
+        let csv_config: writer::CsvWriterConfig = globals
             .get::<_, Option<mlua::Value>>("csvWriterConf")?
             .map(|h| lua.from_value(h))
-            .unwrap_or_else(|| Ok(CsvWriterConfig::default()))?;
+            .unwrap_or_else(|| Ok(writer::CsvWriterConfig::default()))?;
         drop(globals);
 
         let (tx_record, _) = TX_CSV_WRITER.get_or_try_init::<_, anyhow::Error>(move || {
@@ -204,7 +152,7 @@ impl Scrapable for LuaScraper {
             let (tx_stop, rx_stop) = bounded::<()>(1);
 
             let mut wtr = csv::WriterBuilder::from(&csv_config).from_path(&config.csv_file)?;
-            thread::spawn(move || loop {
+            thread::Builder::new().spawn(move || loop {
                 select! {
                     recv(rx_stop) -> _ => {
                         wtr.flush().ok();
@@ -218,7 +166,7 @@ impl Scrapable for LuaScraper {
                             .ok();
                     }
                 }
-            });
+            })?;
 
             Ok((tx_record, tx_stop))
         })?;
