@@ -4,7 +4,7 @@ use std::{env, io};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
-use sws_crawler::{crawl_site, CrawlerConfig, OnDownloadError, OnScrapError, OnXmlError};
+use sws_crawler::{crawl_site, CrawlerConfig, OnError};
 use sws_lua::{LuaScraper, LuaScraperConfig};
 use tokio::runtime;
 
@@ -48,15 +48,18 @@ pub struct ScrapArgs {
     /// Override crawler's number of CPU workers used to parse pages
     #[clap(long)]
     pub num_workers: Option<usize>,
+    /// No SIGINT handling, scraper finalizer won't be called
+    #[clap(long)]
+    pub no_sigint: bool,
     /// Override crawler's download error handling strategy
     #[clap(arg_enum, long)]
-    pub on_dl_error: Option<OnDownloadError>,
+    pub on_dl_error: Option<OnError>,
     /// Override crawler's xml error handling strategy
     #[clap(arg_enum, long)]
-    pub on_xml_error: Option<OnXmlError>,
+    pub on_xml_error: Option<OnError>,
     /// Override crawler's scrap error handling strategy
     #[clap(arg_enum, long)]
-    pub on_scrap_error: Option<OnScrapError>,
+    pub on_scrap_error: Option<OnError>,
     /// When quiet no logs are outputted
     #[clap(long, short)]
     pub quiet: bool,
@@ -91,6 +94,9 @@ impl TryFrom<&ScrapArgs> for CrawlerConfig {
         }
         if let Some(on_scrap_error) = args.on_scrap_error {
             conf.on_scrap_error = on_scrap_error;
+        }
+        if args.no_sigint {
+            conf.handle_sigint = false;
         }
         Ok(conf)
     }

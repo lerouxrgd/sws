@@ -77,11 +77,11 @@ where
         let package = match parser::parse(&sitemap_xml) {
             Ok(package) => package,
             Err(e) => match config.on_xml_error {
-                OnXmlError::SkipAndLog => {
+                OnError::SkipAndLog => {
                     log::warn!("Skipping XML: {sitemap_url} got: {e}");
                     return Ok(());
                 }
-                OnXmlError::Fail => return Err(anyhow!("Couldn't parse {sitemap_url} got: {e}")),
+                OnError::Fail => return Err(anyhow!("Couldn't parse {sitemap_url} got: {e}")),
             },
         };
         let document = package.as_document();
@@ -96,11 +96,11 @@ where
         let value = match xpath.evaluate(&context, document.root()) {
             Ok(value) => value,
             Err(e) => match config.on_xml_error {
-                OnXmlError::SkipAndLog => {
+                OnError::SkipAndLog => {
                     log::warn!("Skipping XML: {sitemap_url} xpath {xpath:?} got: {e}");
                     return Ok(());
                 }
-                OnXmlError::Fail => {
+                OnError::Fail => {
                     return Err(anyhow!(
                         "Couldn't evaluate {xpath:?} for {sitemap_url} got: {e}"
                     ))
@@ -124,12 +124,12 @@ where
                         .buffer_unordered(config.concurrent_downloads);
 
                     match config.on_dl_error {
-                        OnDownloadError::Fail => {
+                        OnError::Fail => {
                             let mut err = Ok::<(), Error>(());
                             stream.scan(&mut err, until_err).collect::<Vec<_>>().await;
                             err?
                         }
-                        OnDownloadError::SkipAndLog => {
+                        OnError::SkipAndLog => {
                             stream
                                 .filter_map(|dl| async move {
                                     dl.map_err(|e| log::warn!("Skipping URL: {e}")).ok()
@@ -194,9 +194,10 @@ pub struct CrawlerConfig {
     pub page_buffer: usize,
     pub concurrent_downloads: usize,
     pub num_workers: usize,
-    pub on_dl_error: OnDownloadError,
-    pub on_xml_error: OnXmlError,
-    pub on_scrap_error: OnScrapError,
+    pub handle_sigint: bool,
+    pub on_dl_error: OnError,
+    pub on_xml_error: OnError,
+    pub on_scrap_error: OnError,
 }
 
 impl Default for CrawlerConfig {
@@ -205,31 +206,18 @@ impl Default for CrawlerConfig {
             user_agent: format!("SWSbot/{}", env!("CARGO_PKG_VERSION")),
             page_buffer: 10_000,
             concurrent_downloads: 100,
-            num_workers: cmp::max(1, num_cpus::get() - 2),
-            on_dl_error: OnDownloadError::SkipAndLog,
-            on_xml_error: OnXmlError::SkipAndLog,
-            on_scrap_error: OnScrapError::SkipAndLog,
+            num_workers: cmp::max(1, num_cpus::get().saturating_sub(2)),
+            handle_sigint: true,
+            on_dl_error: OnError::SkipAndLog,
+            on_xml_error: OnError::SkipAndLog,
+            on_scrap_error: OnError::SkipAndLog,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
-pub enum OnDownloadError {
-    Fail,
-    SkipAndLog,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
-pub enum OnScrapError {
-    Fail,
-    SkipAndLog,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
-pub enum OnXmlError {
+pub enum OnError {
     Fail,
     SkipAndLog,
 }
@@ -262,10 +250,10 @@ where
                 match scraper.scrap(&page) {
                     Ok(()) => (),
                     Err(e) => match crawler_conf.on_scrap_error {
-                        OnScrapError::SkipAndLog => {
+                        OnError::SkipAndLog => {
                             log::error!("Skipping page scrap: {e}");
                         }
-                        OnScrapError::Fail => {
+                        OnError::Fail => {
                             stop.store(true, Ordering::SeqCst);
                             scraper.finalizer();
                             return Err(e);
@@ -295,7 +283,7 @@ where
             .buffer_unordered(crawler_conf.concurrent_downloads);
 
         match crawler_conf.on_dl_error {
-            OnDownloadError::Fail => {
+            OnError::Fail => {
                 let mut err = Ok::<(), Error>(());
                 stream
                     .scan(&mut err, until_err)
@@ -304,7 +292,7 @@ where
                     .await;
                 err
             }
-            OnDownloadError::SkipAndLog => {
+            OnError::SkipAndLog => {
                 stream
                     .filter_map(
                         |dl| async move { dl.map_err(|e| log::warn!("Skipping URL: {e}")).ok() },
@@ -324,6 +312,17 @@ where
 
     // Run all tasks
 
-    try_join!(workers, downloader, crawler)?;
+    if crawler_conf.handle_sigint {
+        let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
+        let interrupt = async move {
+            tokio::signal::ctrl_c().await?;
+            scraper.finalizer();
+            Err::<(), _>(anyhow!("Interrupted"))
+        };
+        try_join!(workers, downloader, crawler, interrupt)?;
+    } else {
+        try_join!(workers, downloader, crawler)?;
+    }
+
     Ok(())
 }
