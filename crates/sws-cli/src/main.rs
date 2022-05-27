@@ -1,11 +1,11 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use std::{env, io};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
 use sws_crawler::{crawl_site, CrawlerConfig, OnError};
-use sws_lua::{LuaScraper, LuaScraperConfig};
+use sws_lua::{scrap_page, LuaScraper, LuaScraperConfig};
 use tokio::runtime;
 
 /// Sitemap Web Scraper
@@ -18,15 +18,17 @@ pub struct Args {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum SubCommand {
+    #[clap(name = "crawl")]
+    Crawl(CrawlArgs),
     #[clap(name = "scrap")]
     Scrap(ScrapArgs),
     #[clap(hide = true)]
     Completion,
 }
 
-/// Scrap website content
+/// Crawl sitemap and scrap pages content
 #[derive(Debug, clap::Args)]
-pub struct ScrapArgs {
+pub struct CrawlArgs {
     /// Path to the Lua script that defines scraping logic
     #[clap(parse(from_os_str), long, short)]
     pub script: PathBuf,
@@ -65,10 +67,10 @@ pub struct ScrapArgs {
     pub quiet: bool,
 }
 
-impl TryFrom<&ScrapArgs> for CrawlerConfig {
+impl TryFrom<&CrawlArgs> for CrawlerConfig {
     type Error = anyhow::Error;
 
-    fn try_from(args: &ScrapArgs) -> Result<Self, Self::Error> {
+    fn try_from(args: &CrawlArgs) -> Result<Self, Self::Error> {
         let mut conf = if let Some(file) = args.crawler_config.as_ref().map(|p| File::open(p)) {
             serde_yaml::from_reader(file?)?
         } else {
@@ -102,7 +104,7 @@ impl TryFrom<&ScrapArgs> for CrawlerConfig {
     }
 }
 
-pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
+pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
     let crawler_conf = (&args).try_into()?;
     let scraper_conf = LuaScraperConfig {
         script: args.script,
@@ -112,15 +114,54 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
     rt.block_on(crawl_site::<LuaScraper>(&crawler_conf, &scraper_conf))
 }
 
+/// Scrap a single page and print the result to stdout
+#[derive(Debug, clap::Args)]
+#[clap(group = clap::ArgGroup::new("page").required(true))]
+pub struct ScrapArgs {
+    /// Path to the Lua script that defines scraping logic
+    #[clap(parse(from_os_str), long, short)]
+    pub script: PathBuf,
+    /// A local html page to scrap
+    #[clap(group = "page", parse(from_os_str), long)]
+    pub file: Option<PathBuf>,
+    /// A distant html page to scrap
+    #[clap(group = "page", long)]
+    pub url: Option<String>,
+    /// Custom user agent to download the page
+    #[clap(long, conflicts_with = "file")]
+    pub ua: Option<String>,
+}
+
+pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
+    let page = if let Some(url) = args.url {
+        let mut builder = reqwest::blocking::ClientBuilder::new();
+        if let Some(ua) = args.ua {
+            builder = builder.user_agent(ua);
+        }
+        let client = builder.build()?;
+        client.get(url).send()?.text()?
+    } else if let Some(path) = args.file {
+        fs::read_to_string(path)?
+    } else {
+        anyhow::bail!("Missing `page` or `file`");
+    };
+    scrap_page(args.script, &page)
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     match args.cmd {
-        SubCommand::Scrap(args) => {
+        SubCommand::Crawl(args) => {
             if !args.quiet {
-                env::set_var("RUST_LOG", "sws_crawler=warn,sws_lua=warn");
+                env::set_var("RUST_LOG", "sws_lua=warn,sws_crawler=warn");
                 env_logger::init();
             }
+            crawl(args)
+        }
+        SubCommand::Scrap(args) => {
+            env::set_var("RUST_LOG", "sws_lua=warn");
+            env_logger::init();
             scrap(args)
         }
         SubCommand::Completion => {

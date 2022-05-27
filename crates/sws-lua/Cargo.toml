@@ -13,3 +13,4 @@ once_cell = "1"
 serde = { version = "1", features = ["derive"] }
 sws-scraper = { path = "../sws-scraper" }
 sws-crawler = { path = "../sws-crawler" }
+tempfile = "3"
