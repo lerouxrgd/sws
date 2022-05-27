@@ -1537,6 +1537,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "env_logger",
+ "reqwest",
  "serde_yaml",
  "sws-crawler",
  "sws-lua",
@@ -1576,6 +1577,7 @@ dependencies = [
  "serde",
  "sws-crawler",
  "sws-scraper",
+ "tempfile",
 ]
 
 [[package]]
