@@ -136,7 +136,12 @@ impl Scrapable for LuaScraper {
             .globals()
             .get(globals::SCRAP_PAGE)
             .expect(&format!("Function {} not found", globals::SCRAP_PAGE)); // Ensured in constructor
-        Ok(scrap_page.call::<_, ()>((page, location, self.context.clone()))?)
+        Ok(scrap_page
+            .call::<_, ()>((page, location, self.context.clone()))
+            .map_err(|e| match e {
+                mlua::Error::CallbackError { cause, .. } => cause.as_ref().clone(),
+                _ => e,
+            })?)
     }
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool {
@@ -150,7 +155,12 @@ impl Scrapable for LuaScraper {
         match accept_url.call::<_, bool>((sm, url.to_string())) {
             Ok(accepted) => accepted,
             Err(e) => {
-                log::error!("Couldn't process {sm:?} {url}: {e}");
+                match e {
+                    mlua::Error::CallbackError { cause, .. } => {
+                        log::error!("Couldn't process {sm:?} {url}: {cause}")
+                    }
+                    _ => log::error!("Couldn't process {sm:?} {url}: {e}"),
+                }
                 false
             }
         }
