@@ -1,4 +1,5 @@
 pub mod interop;
+pub mod ns;
 mod scraper;
 pub mod writer;
 

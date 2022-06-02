@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::io::prelude::*;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -35,7 +36,7 @@ pub trait Scrapable {
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool;
 
-    fn scrap(&mut self, page: &str) -> anyhow::Result<()>;
+    fn scrap(&mut self, page: String, location: PageLocation) -> anyhow::Result<()>;
 
     fn finalizer(&mut self) {}
 }
@@ -62,6 +63,18 @@ impl Sitemap {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum PageLocation {
+    Url(String),
+    Path(PathBuf),
+}
+
+#[derive(Debug, Clone)]
+struct Page {
+    page: String,
+    location: PageLocation,
+}
+
 fn gather_urls<'a, T>(
     config: &'a CrawlerConfig,
     scraper: &'a T,
@@ -72,7 +85,9 @@ where
     T: Scrapable,
 {
     Box::pin(async move {
-        let sitemap_xml = download(config, sitemap_url).await?;
+        let Page {
+            page: sitemap_xml, ..
+        } = download(config, sitemap_url).await?;
 
         let package = match parser::parse(&sitemap_xml) {
             Ok(package) => package,
@@ -156,23 +171,28 @@ where
     })
 }
 
-async fn download(config: &CrawlerConfig, url: &str) -> Result<String> {
+async fn download(config: &CrawlerConfig, url: &str) -> Result<Page> {
     let resp = HTTP_CLI
         .get(url)
         .header(USER_AGENT, &config.user_agent)
         .send()
         .await?;
 
-    match resp.headers().get(CONTENT_TYPE) {
+    let page = match resp.headers().get(CONTENT_TYPE) {
         Some(c) if c == "application/x-gzip" || c == "application/gzip" => {
             let compressed = resp.bytes().await?;
             let mut gz = GzDecoder::new(&compressed[..]);
             let mut page = String::new();
             gz.read_to_string(&mut page)?;
-            Ok(page)
+            page
         }
-        _ => Ok(resp.text().await?),
-    }
+        _ => resp.text().await?,
+    };
+
+    Ok(Page {
+        page,
+        location: PageLocation::Url(url.to_string()),
+    })
 }
 
 fn until_err<T, E>(
@@ -230,7 +250,7 @@ where
     T: Scrapable,
 {
     let (tx_url, rx_url) = mpsc::unbounded_channel::<String>();
-    let (tx_page, rx_page) = crossbeam_channel::bounded::<String>(crawler_conf.page_buffer);
+    let (tx_page, rx_page) = crossbeam_channel::bounded::<Page>(crawler_conf.page_buffer);
 
     // Workers
 
@@ -245,11 +265,11 @@ where
             .name(format!("{id}"))
             .spawn(move || {
                 let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
-                for page in rx_page.into_iter() {
+                for Page { page, location } in rx_page.into_iter() {
                     if stop.load(Ordering::Relaxed) {
                         break;
                     }
-                    match scraper.scrap(&page) {
+                    match scraper.scrap(page, location) {
                         Ok(()) => (),
                         Err(e) => match crawler_conf.on_scrap_error {
                             OnError::SkipAndLog => {

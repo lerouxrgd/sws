@@ -2,14 +2,14 @@
 sitemapUrl = "https://www.urbandictionary.com/sitemap-https.xml.gz"
 
 function acceptUrl(sitemap, url)
-   if sitemap:kind() == "Urlset" then
+   if sitemap:kind() == sws.Sitemap.URL_SET then
       return string.find(url, "term=")
    else
       return true
    end
 end
 
-function processPage(page, context)
+function scrapPage(page, location, context)
    for i, def in sws.selectIter(page:select("section .definition")) do
       local record = sws.newRecord()
 

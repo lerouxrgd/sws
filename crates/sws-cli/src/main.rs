@@ -4,7 +4,7 @@ use std::{env, io};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
-use sws_crawler::{crawl_site, CrawlerConfig, OnError};
+use sws_crawler::{crawl_site, CrawlerConfig, OnError, PageLocation};
 use sws_lua::{scrap_page, LuaScraper, LuaScraperConfig};
 use tokio::runtime;
 
@@ -133,19 +133,21 @@ pub struct ScrapArgs {
 }
 
 pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
-    let page = if let Some(url) = args.url {
+    let (page, location) = if let Some(url) = args.url {
         let mut builder = reqwest::blocking::ClientBuilder::new();
         if let Some(ua) = args.ua {
             builder = builder.user_agent(ua);
         }
         let client = builder.build()?;
-        client.get(url).send()?.text()?
+        let page = client.get(&url).send()?.text()?;
+        (page, PageLocation::Url(url))
     } else if let Some(path) = args.file {
-        fs::read_to_string(path)?
+        let page = fs::read_to_string(&path)?;
+        (page, PageLocation::Path(path))
     } else {
-        anyhow::bail!("Missing `page` or `file`");
+        anyhow::bail!("Missing `url` or `file`");
     };
-    scrap_page(args.script, &page)
+    scrap_page(args.script, page, location)
 }
 
 fn main() -> anyhow::Result<()> {

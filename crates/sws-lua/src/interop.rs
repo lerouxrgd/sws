@@ -1,17 +1,24 @@
 use std::rc::Rc;
-use std::thread;
+use std::{fs, thread};
 
 use crossbeam_channel::Sender;
 use mlua::{MetaMethod, UserData, UserDataMethods};
-use sws_crawler::Sitemap;
+use sws_crawler::{PageLocation, Sitemap};
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
+
+use crate::ns::{globals, sws};
 
 pub struct LuaHtml(pub(crate) Html);
 
 impl UserData for LuaHtml {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("select", |_, html, css_selector: String| {
-            let select = html.0.select(Selector::parse(&css_selector).unwrap());
+            let select = html.0.select(Selector::parse(&css_selector).map_err(|e| {
+                mlua::Error::RuntimeError(format!(
+                    "Invalid CSS selector {:?}: {:?}",
+                    css_selector, e
+                ))
+            })?);
             Ok(LuaSelect(select))
         });
     }
@@ -27,7 +34,12 @@ pub struct LuaElementRef(pub(crate) ElementRef);
 impl UserData for LuaElementRef {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method("select", |_, elem, css_selector: String| {
-            let select = elem.0.select(Selector::parse(&css_selector).unwrap());
+            let select = elem.0.select(Selector::parse(&css_selector).map_err(|e| {
+                mlua::Error::RuntimeError(format!(
+                    "Invalid CSS selector {:?}: {:?}",
+                    css_selector, e
+                ))
+            })?);
             Ok(LuaSelect(select))
         });
 
@@ -42,7 +54,16 @@ pub struct LuaSitemap(pub(crate) Sitemap);
 
 impl UserData for LuaSitemap {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method("kind", |_, sm, ()| Ok(format!("{:?}", sm.0)));
+        methods.add_method("kind", |lua, sm, ()| {
+            let sitemap = match sm.0 {
+                Sitemap::Index => sws::sitemap::INDEX,
+                Sitemap::Urlset => sws::sitemap::URL_SET,
+            };
+            lua.globals()
+                .get::<_, mlua::Table>(globals::SWS)?
+                .get::<_, mlua::Table>(sws::SITEMAP)?
+                .get::<_, String>(sitemap)
+        });
     }
 }
 
@@ -57,6 +78,31 @@ impl UserData for LuaStringRecord {
 
         methods.add_method_mut("pushField", |_, record, field: String| {
             Ok(record.0.push_field(&field))
+        });
+    }
+}
+
+#[derive(Debug)]
+pub struct LuaPageLocation(pub(crate) PageLocation);
+
+impl UserData for LuaPageLocation {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_method("kind", |lua, pl, ()| {
+            let location = match pl.0 {
+                PageLocation::Path(_) => sws::location::PATH,
+                PageLocation::Url(_) => sws::location::URL,
+            };
+            lua.globals()
+                .get::<_, mlua::Table>(globals::SWS)?
+                .get::<_, mlua::Table>(sws::LOCATION)?
+                .get::<_, String>(location)
+        });
+
+        methods.add_method("get", |_, pl, ()| {
+            Ok(match &pl.0 {
+                PageLocation::Path(p) => format!("{}", fs::canonicalize(p)?.display()),
+                PageLocation::Url(url) => url.to_string(),
+            })
         });
     }
 }
