@@ -1,5 +1,5 @@
 
-sitemapUrl = "https://www.urbandictionary.com/sitemap-https.xml.gz"
+sws.sitemapUrl = "https://www.urbandictionary.com/sitemap-https.xml.gz"
 
 function acceptUrl(sitemap, url)
    if sitemap:kind() == sws.Sitemap.URL_SET then

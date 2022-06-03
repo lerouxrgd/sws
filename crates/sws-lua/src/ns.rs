@@ -1,18 +1,17 @@
 pub mod globals {
     //! The global namespace
 
-    pub const SITEMAP_URL: &str = "sitemapUrl"; // String
-
     pub const ACCEPT_URL: &str = "acceptUrl"; // Function
     pub const SCRAP_PAGE: &str = "scrapPage"; // Function
-
-    pub const CSV_WRITER_CONFIG: &str = "csvWriterConf"; // Table
 
     pub const SWS: &str = "sws"; // Table
 }
 
 pub mod sws {
     //! The `sws` namespace
+
+    pub const SITEMAP_URL: &str = "sitemapUrl"; // String
+    pub const CSV_WRITER_CONFIG: &str = "csvWriterConf"; // Table
 
     pub const SELECT_ITER: &str = "selectIter"; // Function
     pub const NEW_RECORD: &str = "newRecord"; // Function

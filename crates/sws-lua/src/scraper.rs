@@ -35,10 +35,19 @@ impl Scrapable for LuaScraper {
 
     fn new(config: &LuaScraperConfig) -> anyhow::Result<Self> {
         let lua = Lua::new();
+        let globals = lua.globals();
+
+        // Load and check script
+
+        let sws = lua.create_table()?;
+        globals.set(globals::SWS, sws)?;
+        lua.load(&fs::read_to_string(&config.script)?).exec()?;
+        let _: Function = globals.get(globals::ACCEPT_URL)?;
+        let _: Function = globals.get(globals::SCRAP_PAGE)?;
 
         // Setup sws namespace
 
-        let sws = lua.create_table()?;
+        let sws = globals.get::<_, mlua::Table>(globals::SWS)?;
 
         let select_iter = lua.create_function(move |lua, mut select: LuaSelect| {
             let mut i = 0;
@@ -69,18 +78,25 @@ impl Scrapable for LuaScraper {
         sitemap.set(sws::sitemap::URL_SET, sws::sitemap::URL_SET)?;
         sws.set(sws::SITEMAP, sitemap)?;
 
-        // Setup globals
+        // Retrieve custom values
 
-        let globals = lua.globals();
-        lua.load(&fs::read_to_string(&config.script)?).exec()?;
-        globals.set(globals::SWS, sws)?;
-        let _: Function = globals.get(globals::ACCEPT_URL)?;
-        let _: Function = globals.get(globals::SCRAP_PAGE)?;
-        let sitemap_url: String = globals.get(globals::SITEMAP_URL)?;
-        let csv_config: writer::CsvWriterConfig = globals
-            .get::<_, Option<mlua::Value>>(globals::CSV_WRITER_CONFIG)?
+        let sitemap_url: String = sws.get(sws::SITEMAP_URL).map_err(|e| {
+            mlua::Error::RuntimeError(format!(
+                "Couldn't read {}.{} got: {}",
+                globals::SWS,
+                sws::SITEMAP_URL,
+                e
+            ))
+        })?;
+
+        let csv_config: writer::CsvWriterConfig = sws
+            .get::<_, Option<mlua::Value>>(sws::CSV_WRITER_CONFIG)?
             .map(|h| lua.from_value(h))
             .unwrap_or_else(|| Ok(writer::CsvWriterConfig::default()))?;
+
+        // Register sws namespace
+
+        globals.set(globals::SWS, sws)?;
         drop(globals);
 
         // Setup csv writer
