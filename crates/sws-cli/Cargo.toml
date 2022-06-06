@@ -13,4 +13,5 @@ reqwest = { version = "0.11", features = ["blocking"] }
 serde_yaml = "0.8"
 sws-crawler = { path = "../sws-crawler", features = ["clap"] }
 sws-lua = { path = "../sws-lua" }
+tempfile = "3"
 tokio = { version = "1", features = ["full"] }

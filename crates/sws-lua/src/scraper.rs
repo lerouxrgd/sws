@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::{fs, thread};
 
@@ -6,7 +6,7 @@ use crossbeam_channel::{bounded, select, unbounded, Sender};
 use mlua::{Function, Lua, LuaSerdeExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use sws_crawler::{PageLocation, Scrapable, Sitemap};
+use sws_crawler::{OnError, PageLocation, Scrapable, Sitemap};
 use sws_scraper::Html;
 
 use crate::interop::{
@@ -154,10 +154,7 @@ impl Scrapable for LuaScraper {
             .expect(&format!("Function {} not found", globals::SCRAP_PAGE)); // Ensured in constructor
         Ok(scrap_page
             .call::<_, ()>((page, location, self.context.clone()))
-            .map_err(|e| match e {
-                mlua::Error::CallbackError { cause, .. } => cause.as_ref().clone(),
-                _ => e,
-            })?)
+            .map_err(|e| anyhow::anyhow!(e.to_string().replace('\n', "")))?)
     }
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool {
@@ -171,36 +168,48 @@ impl Scrapable for LuaScraper {
         match accept_url.call::<_, bool>((sm, url.to_string())) {
             Ok(accepted) => accepted,
             Err(e) => {
-                match e {
-                    mlua::Error::CallbackError { cause, .. } => {
-                        log::error!("Couldn't process {sm:?} {url}: {cause}")
-                    }
-                    _ => log::error!("Couldn't process {sm:?} {url}: {e}"),
-                }
+                log::error!(
+                    "Couldn't process {sm:?} {url}: {}",
+                    e.to_string().replace('\n', "")
+                );
                 false
             }
         }
     }
 }
 
-pub fn scrap_page<P: AsRef<Path>>(
-    script: P,
+pub fn scrap_dir(
+    config: &LuaScraperConfig,
+    pattern: String,
+    on_error: OnError,
+) -> anyhow::Result<()> {
+    let mut scraper = LuaScraper::new(&config)?;
+    for path in glob::glob(&pattern)? {
+        let path = path?;
+        match scraper.scrap(fs::read_to_string(&path)?, PageLocation::Path(path)) {
+            Ok(()) => (),
+            Err(e) => match on_error {
+                OnError::SkipAndLog => {
+                    log::error!("Skipping page scrap: {e}");
+                }
+                OnError::Fail => {
+                    scraper.finalizer();
+                    return Err(e);
+                }
+            },
+        }
+    }
+    scraper.finalizer();
+    Ok(())
+}
+
+pub fn scrap_page(
+    config: &LuaScraperConfig,
     page: String,
     location: PageLocation,
 ) -> anyhow::Result<()> {
-    let script = script.as_ref().into();
-
-    let temp = tempfile::NamedTempFile::new()?;
-    let csv_file = temp.path().into();
-
-    let conf = LuaScraperConfig { script, csv_file };
-    let mut scraper = LuaScraper::new(&conf)?;
+    let mut scraper = LuaScraper::new(&config)?;
     scraper.scrap(page, location)?;
     scraper.finalizer();
-    drop(scraper);
-
-    let result = fs::read_to_string(temp.path())?;
-    println!("{result}");
-
     Ok(())
 }
