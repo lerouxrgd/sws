@@ -37,10 +37,6 @@ pub struct CrawlArgs {
     #[clap(display_order(2), parse(from_os_str), long, short)]
     pub output_file: PathBuf,
 
-    /// Optional default carwler yaml configuration file
-    #[clap(display_order(3), env = "SWS_CRAWLER_CONFIG", parse(from_os_str), long)]
-    pub crawler_config: Option<PathBuf>,
-
     /// Override crawler's user agent
     #[clap(display_order(4), long)]
     pub user_agent: Option<String>,
@@ -78,49 +74,38 @@ pub struct CrawlArgs {
     pub quiet: bool,
 }
 
-impl TryFrom<&CrawlArgs> for CrawlerConfig {
-    type Error = anyhow::Error;
-
-    fn try_from(args: &CrawlArgs) -> Result<Self, Self::Error> {
-        let mut conf = if let Some(file) = args.crawler_config.as_ref().map(|p| File::open(p)) {
-            serde_yaml::from_reader(file?)?
-        } else {
-            CrawlerConfig::default()
-        };
-        if let Some(user_agent) = &args.user_agent {
-            conf.user_agent = user_agent.to_string();
-        }
-        if let Some(page_buffer) = args.page_buffer {
-            conf.page_buffer = page_buffer;
-        }
-        if let Some(concurrent_downloads) = args.concurrent_downloads {
-            conf.concurrent_downloads = concurrent_downloads;
-        }
-        if let Some(num_workers) = args.num_workers {
-            conf.num_workers = num_workers;
-        }
-        if let Some(on_dl_error) = args.on_dl_error {
-            conf.on_dl_error = on_dl_error;
-        }
-        if let Some(on_xml_error) = args.on_xml_error {
-            conf.on_xml_error = on_xml_error;
-        }
-        if let Some(on_scrap_error) = args.on_scrap_error {
-            conf.on_scrap_error = on_scrap_error;
-        }
-        if args.no_sigint {
-            conf.handle_sigint = false;
-        }
-        Ok(conf)
-    }
-}
-
 pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
-    let crawler_conf = (&args).try_into()?;
     let scraper_conf = LuaScraperConfig {
         script: args.script,
         csv_file: args.output_file,
     };
+
+    let mut crawler_conf = CrawlerConfig::try_from(&scraper_conf)?;
+    if let Some(user_agent) = &args.user_agent {
+        crawler_conf.user_agent = user_agent.to_string();
+    }
+    if let Some(page_buffer) = args.page_buffer {
+        crawler_conf.page_buffer = page_buffer;
+    }
+    if let Some(concurrent_downloads) = args.concurrent_downloads {
+        crawler_conf.concurrent_downloads = concurrent_downloads;
+    }
+    if let Some(num_workers) = args.num_workers {
+        crawler_conf.num_workers = num_workers;
+    }
+    if let Some(on_dl_error) = args.on_dl_error {
+        crawler_conf.on_dl_error = on_dl_error;
+    }
+    if let Some(on_xml_error) = args.on_xml_error {
+        crawler_conf.on_xml_error = on_xml_error;
+    }
+    if let Some(on_scrap_error) = args.on_scrap_error {
+        crawler_conf.on_scrap_error = on_scrap_error;
+    }
+    if args.no_sigint {
+        crawler_conf.handle_sigint = false;
+    }
+
     let rt = runtime::Builder::new_multi_thread().enable_all().build()?;
     rt.block_on(crawl_site::<LuaScraper>(&crawler_conf, &scraper_conf))
 }
@@ -141,26 +126,21 @@ pub struct ScrapArgs {
     #[clap(display_order(3), group = "pages", long)]
     pub url: Option<String>,
 
-    /// Custom user agent to download the page
-    #[clap(display_order(4), long)]
-    #[clap(conflicts_with = "file", conflicts_with = "glob")]
-    pub ua: Option<String>,
-
     /// A glob pattern to select local files to scrap
-    #[clap(display_order(5), group = "pages", long)]
+    #[clap(display_order(4), group = "pages", long)]
     pub glob: Option<String>,
 
     /// Scrap error handling strategy when processing glob files
-    #[clap(display_order(6), arg_enum, long)]
+    #[clap(display_order(5), arg_enum, long)]
     #[clap(conflicts_with = "file", conflicts_with = "url")]
     pub on_error: Option<OnError>,
 
     /// Optional file that will contain scrapped data, stdout otherwise
-    #[clap(display_order(7), parse(from_os_str), long, short)]
+    #[clap(display_order(6), parse(from_os_str), long, short)]
     pub output_file: Option<PathBuf>,
 
     /// Don't output logs
-    #[clap(display_order(8), long, short)]
+    #[clap(display_order(7), long, short)]
     pub quiet: bool,
 }
 
@@ -180,11 +160,10 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
 
     match (args.url, args.file, args.glob) {
         (Some(url), None, None) => {
-            let mut builder = reqwest::blocking::ClientBuilder::new();
-            if let Some(ua) = args.ua {
-                builder = builder.user_agent(ua);
-            }
-            let client = builder.build()?;
+            let ua = CrawlerConfig::try_from(&config)?.user_agent;
+            let client = reqwest::blocking::ClientBuilder::new()
+                .user_agent(ua)
+                .build()?;
             let page = client.get(&url).send()?.text()?;
             scrap_page(&config, page, PageLocation::Url(url))?
         }
@@ -193,7 +172,7 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
             scrap_page(&config, page, PageLocation::Path(path))?
         }
         (None, None, Some(pattern)) => {
-            scrap_dir(&config, pattern, args.on_error.unwrap_or(OnError::Fail))?;
+            scrap_dir(&config, &pattern, args.on_error.unwrap_or(OnError::Fail))?;
         }
         _ => anyhow::bail!("Invalid arguments"),
     }

@@ -6,7 +6,7 @@ use crossbeam_channel::{bounded, select, unbounded, Sender};
 use mlua::{Function, Lua, LuaSerdeExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use sws_crawler::{OnError, PageLocation, Scrapable, Sitemap};
+use sws_crawler::{CrawlerConfig, OnError, PageLocation, Scrapable, Sitemap};
 use sws_scraper::Html;
 
 use crate::interop::{
@@ -178,13 +178,34 @@ impl Scrapable for LuaScraper {
     }
 }
 
+impl TryFrom<&LuaScraperConfig> for CrawlerConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(c: &LuaScraperConfig) -> Result<Self, Self::Error> {
+        let lua = Lua::new();
+        let globals = lua.globals();
+
+        let sws = lua.create_table()?;
+        globals.set(globals::SWS, sws)?;
+        lua.load(&fs::read_to_string(&c.script)?).exec()?;
+
+        let crawler_config: CrawlerConfig = globals
+            .get::<_, mlua::Table>(globals::SWS)?
+            .get::<_, Option<mlua::Value>>(sws::CRAWLER_CONFIG)?
+            .map(|h| lua.from_value(h))
+            .unwrap_or_else(|| Ok(CrawlerConfig::default()))?;
+
+        Ok(crawler_config)
+    }
+}
+
 pub fn scrap_dir(
     config: &LuaScraperConfig,
-    pattern: String,
+    pattern: &str,
     on_error: OnError,
 ) -> anyhow::Result<()> {
     let mut scraper = LuaScraper::new(&config)?;
-    for path in glob::glob(&pattern)? {
+    for path in glob::glob(pattern)? {
         let path = path?;
         match scraper.scrap(fs::read_to_string(&path)?, PageLocation::Path(path)) {
             Ok(()) => (),

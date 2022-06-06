@@ -11,7 +11,8 @@ pub mod sws {
     //! The `sws` namespace
 
     pub const SITEMAP_URL: &str = "sitemapUrl"; // String
-    pub const CSV_WRITER_CONFIG: &str = "csvWriterConf"; // Table
+    pub const CSV_WRITER_CONFIG: &str = "csvWriterConfig"; // Table
+    pub const CRAWLER_CONFIG: &str = "crawlerConfig"; // Table
 
     pub const SELECT_ITER: &str = "selectIter"; // Function
     pub const NEW_RECORD: &str = "newRecord"; // Function
