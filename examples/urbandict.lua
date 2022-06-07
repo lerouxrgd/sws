@@ -2,28 +2,28 @@
 sws.sitemapUrl = "https://www.urbandictionary.com/sitemap-https.xml.gz"
 
 function acceptUrl(sitemap, url)
-   if sitemap:kind() == sws.Sitemap.URL_SET then
+   if sitemap == sws.Sitemap.URL_SET then
       return string.find(url, "term=")
    else
       return true
    end
 end
 
-function scrapPage(page, location, context)
-   for i, def in sws.selectIter(page:select("section .definition")) do
-      local record = sws.newRecord()
+function scrapPage(page, context)
+   for i, def in sws.enumerate(page:select("section .definition")) do
+      local record = sws.Record:new()
 
-      local _, word = sws.selectIter(def:select("h1 a.word"))()
+      local word = sws.iter(def:select("h1 a.word"))()
       word = word:innerHtml()
       if string.find(word, "\t") then goto continue end
 
-      local _, contributor = sws.selectIter(def:select(".contributor"))()
+      local contributor = sws.iter(def:select(".contributor"))()
       local date = string.match(contributor:innerHtml(), ".*\\?</a>%s*(.*)\\?")
 
-      local _, meaning = sws.selectIter(def:select(".meaning"))()
+      local meaning = sws.iter(def:select(".meaning"))()
       meaning = meaning:innerText():gsub("[\n\r]+", " "):gsub("\t+", "")
 
-      local _, example = sws.selectIter(def:select(".example"))()
+      local example = sws.iter(def:select(".example"))()
       example = example:innerText():gsub("[\n\r]+", " "):gsub("\t+", "")
 
       if word and date and meaning and example then

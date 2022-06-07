@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::{fs, thread};
 
 use crossbeam_channel::{bounded, select, unbounded, Sender};
@@ -10,8 +9,7 @@ use sws_crawler::{CrawlerConfig, OnError, PageLocation, Scrapable, Sitemap};
 use sws_scraper::Html;
 
 use crate::interop::{
-    LuaElementRef, LuaHtml, LuaPageLocation, LuaSelect, LuaSitemap, LuaStringRecord, LuaSwsContext,
-    SwsContext,
+    LuaElementRef, LuaHtml, LuaSelect, LuaStringRecord, LuaSwsContext, SwsContext,
 };
 use crate::ns::{globals, sws};
 use crate::writer;
@@ -50,6 +48,13 @@ impl Scrapable for LuaScraper {
         let sws = globals.get::<_, mlua::Table>(globals::SWS)?;
 
         let select_iter = lua.create_function(move |lua, mut select: LuaSelect| {
+            let iterator =
+                lua.create_function_mut(move |_, ()| Ok(select.0.next().map(LuaElementRef)));
+            Ok(iterator)
+        })?;
+        sws.set(sws::ITER, select_iter)?;
+
+        let select_enumerate = lua.create_function(move |lua, mut select: LuaSelect| {
             let mut i = 0;
             let iterator = lua.create_function_mut(move |_, ()| {
                 i += 1;
@@ -62,11 +67,13 @@ impl Scrapable for LuaScraper {
             });
             Ok(iterator)
         })?;
-        sws.set("selectIter", select_iter)?;
+        sws.set(sws::ENUMERATE, select_enumerate)?;
 
+        let record = lua.create_table()?;
         let new_record =
             lua.create_function(|_, ()| Ok(LuaStringRecord(csv::StringRecord::new())))?;
-        sws.set("newRecord", new_record)?;
+        record.set(sws::record::NEW, new_record)?;
+        sws.set(sws::RECORD, record)?;
 
         let location = lua.create_table()?;
         location.set(sws::location::PATH, sws::location::PATH)?;
@@ -127,7 +134,7 @@ impl Scrapable for LuaScraper {
 
         // Setup context
 
-        let context = LuaSwsContext(Rc::new(SwsContext::new(tx_record.clone())));
+        let context = LuaSwsContext::new(SwsContext::new(tx_record.clone()));
 
         Ok(Self {
             lua,
@@ -145,20 +152,26 @@ impl Scrapable for LuaScraper {
     }
 
     fn scrap(&mut self, page: String, location: PageLocation) -> anyhow::Result<()> {
-        let location = LuaPageLocation(location);
-        let page = LuaHtml(Html::parse_document(&page));
         let scrap_page: Function = self
             .lua
             .globals()
             .get(globals::SCRAP_PAGE)
             .expect(&format!("Function {} not found", globals::SCRAP_PAGE)); // Ensured in constructor
+
+        let page = LuaHtml(Html::parse_document(&page));
+        self.context.borrow_mut().page_location = location;
+
         Ok(scrap_page
-            .call::<_, ()>((page, location, self.context.clone()))
+            .call::<_, ()>((page, self.context.clone()))
             .map_err(|e| anyhow::anyhow!(e.to_string().replace('\n', "")))?)
     }
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool {
-        let sm = LuaSitemap(sm);
+        let sm = match sm {
+            Sitemap::Index => sws::sitemap::INDEX,
+            Sitemap::Urlset => sws::sitemap::URL_SET,
+        };
+
         let accept_url: Function = self
             .lua
             .globals()
