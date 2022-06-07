@@ -1585,6 +1585,7 @@ dependencies = [
  "serde",
  "sws-crawler",
  "sws-scraper",
+ "tokio",
 ]
 
 [[package]]

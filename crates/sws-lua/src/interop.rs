@@ -98,6 +98,7 @@ impl UserData for LuaPageLocation {
 pub struct SwsContext {
     pub(crate) tx_writer: Sender<csv::StringRecord>,
     pub(crate) page_location: PageLocation,
+    pub(crate) tx_url: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 }
 
 impl SwsContext {
@@ -108,6 +109,7 @@ impl SwsContext {
         Self {
             tx_writer,
             page_location,
+            tx_url: None,
         }
     }
 }
@@ -149,6 +151,15 @@ impl UserData for LuaSwsContext {
                 .map(String::from)
                 .ok_or_else(|| mlua::Error::RuntimeError("Missing thread name".into()))?;
             Ok(id)
+        });
+
+        methods.add_method(sws::context::SEND_URL, |_, ctx, url: String| {
+            if let Some(tx_url) = &ctx.borrow().tx_url {
+                tx_url.send(url).ok();
+            } else {
+                log::warn!("Context not initalized, coudln't send URL {url}")
+            }
+            Ok(())
         });
     }
 }

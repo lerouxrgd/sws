@@ -143,6 +143,10 @@ impl Scrapable for LuaScraper {
         })
     }
 
+    fn init(&mut self, tx_url: tokio::sync::mpsc::UnboundedSender<String>) {
+        self.context.borrow_mut().tx_url = Some(tx_url);
+    }
+
     fn finalizer(&mut self) {
         TX_CSV_WRITER.get().map(|(_, tx_stop)| tx_stop.send(()));
     }

@@ -60,6 +60,7 @@ pub mod sws {
         //! The `SwsContext` class
         pub const PAGE_LOCATION: &str = "pageLocation"; // Function
         pub const SEND_RECORD: &str = "sendRecord"; // Function
+        pub const SEND_URL: &str = "sendUrl"; // Function
         pub const WORKER_ID: &str = "workerId"; // Function
     }
 }

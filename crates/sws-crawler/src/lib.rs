@@ -32,6 +32,8 @@ pub trait Scrapable {
     where
         Self: Sized;
 
+    fn init(&mut self, _tx_url: mpsc::UnboundedSender<String>) {}
+
     fn sitemap(&self) -> &str;
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool;
@@ -299,6 +301,7 @@ where
     let mut workers = vec![];
     for id in 0..crawler_conf.num_workers {
         let rx_page = rx_page.clone();
+        let tx_url = tx_url.clone();
         let scraper_conf = scraper_conf.clone();
         let crawler_conf = crawler_conf.clone();
         let stop = stop.clone();
@@ -306,6 +309,8 @@ where
             .name(format!("{id}"))
             .spawn(move || {
                 let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
+                scraper.init(tx_url);
+
                 for Page { page, location } in rx_page.into_iter() {
                     if stop.load(Ordering::Relaxed) {
                         break;
