@@ -4,9 +4,9 @@ use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstrain
 use selectors::matching;
 use selectors::{Element, OpaqueElement};
 
-use crate::atoms::{AtomIdent, AtomString, WeakAtom};
+use crate::atoms::AtomString;
 use crate::element_ref::ElementRef;
-use crate::selector::{Namespace, NonTSPseudoClass, PseudoElement, Simple};
+use crate::selector::{NonTSPseudoClass, PseudoElement, Simple};
 
 /// Note: will never match against non-tree-structure pseudo-classes.
 impl Element for ElementRef {
@@ -34,7 +34,7 @@ impl Element for ElementRef {
         false
     }
 
-    fn is_part(&self, _name: &AtomIdent) -> bool {
+    fn is_part(&self, _name: &AtomString) -> bool {
         false
     }
 
@@ -44,7 +44,7 @@ impl Element for ElementRef {
             .unwrap_or(false)
     }
 
-    fn imported_part(&self, _: &AtomIdent) -> Option<AtomIdent> {
+    fn imported_part(&self, _: &AtomString) -> Option<AtomString> {
         None
     }
 
@@ -65,20 +65,20 @@ impl Element for ElementRef {
         self.map_value(|v| v.name.ns == ns!(html)).unwrap_or(false)
     }
 
-    fn has_local_name(&self, name: &WeakAtom) -> bool {
+    fn has_local_name(&self, name: &AtomString) -> bool {
         self.map_value(|v| v.name.local.deref() == name.deref())
             .unwrap_or(false)
     }
 
-    fn has_namespace(&self, namespace: &Namespace) -> bool {
+    fn has_namespace(&self, namespace: &AtomString) -> bool {
         self.map_value(|v| v.name.ns.deref() == namespace.deref())
             .unwrap_or(false)
     }
 
     fn attr_matches(
         &self,
-        ns: &NamespaceConstraint<&Namespace>,
-        local_name: &AtomIdent,
+        ns: &NamespaceConstraint<&AtomString>,
+        local_name: &AtomString,
         operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
         self.map_value(|v| {
@@ -116,7 +116,7 @@ impl Element for ElementRef {
         true
     }
 
-    fn has_id(&self, id: &AtomIdent, case_sensitivity: CaseSensitivity) -> bool {
+    fn has_id(&self, id: &AtomString, case_sensitivity: CaseSensitivity) -> bool {
         self.map_value(|v| match v.id {
             Some(ref val) => case_sensitivity.eq(id.as_bytes(), val.as_bytes()),
             None => false,
@@ -124,7 +124,7 @@ impl Element for ElementRef {
         .unwrap_or(false)
     }
 
-    fn has_class(&self, name: &AtomIdent, case_sensitivity: CaseSensitivity) -> bool {
+    fn has_class(&self, name: &AtomString, case_sensitivity: CaseSensitivity) -> bool {
         self.map_value(|v| v.has_class(name, case_sensitivity))
             .unwrap_or(false)
     }
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_has_id() {
-        use crate::atoms::AtomIdent;
+        use crate::atoms::AtomString;
 
         let html = "<p id='link_id_456'>hey there</p>";
         let fragment = Html::parse_fragment(html);
@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(
             true,
             element.has_id(
-                &AtomIdent::from("link_id_456"),
+                &AtomString::from("link_id_456"),
                 CaseSensitivity::CaseSensitive
             )
         );
@@ -174,7 +174,7 @@ mod tests {
         assert_eq!(
             false,
             element.has_id(
-                &AtomIdent::from("any_link_id"),
+                &AtomString::from("any_link_id"),
                 CaseSensitivity::CaseSensitive
             )
         );
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_has_class() {
-        use crate::atoms::AtomIdent;
+        use crate::atoms::AtomString;
 
         let html = "<p class='my_class'>hey there</p>";
         let fragment = Html::parse_fragment(html);
@@ -205,7 +205,10 @@ mod tests {
         let element = fragment.select(sel).next().unwrap();
         assert_eq!(
             true,
-            element.has_class(&AtomIdent::from("my_class"), CaseSensitivity::CaseSensitive)
+            element.has_class(
+                &AtomString::from("my_class"),
+                CaseSensitivity::CaseSensitive
+            )
         );
 
         let html = "<p>hey there</p>";
@@ -214,7 +217,10 @@ mod tests {
         let element = fragment.select(sel).next().unwrap();
         assert_eq!(
             false,
-            element.has_class(&AtomIdent::from("my_class"), CaseSensitivity::CaseSensitive)
+            element.has_class(
+                &AtomString::from("my_class"),
+                CaseSensitivity::CaseSensitive
+            )
         );
     }
 }

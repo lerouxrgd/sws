@@ -6,9 +6,8 @@ use std::fmt;
 use selectors::parser::SelectorParseErrorKind;
 use selectors::{matching, parser};
 use smallvec::SmallVec;
-use string_cache::{Atom, EmptyStaticAtomSet};
 
-use crate::atoms::{AtomIdent, AtomString, WeakAtom};
+use crate::atoms::AtomString;
 use crate::element_ref::ElementRef;
 
 /// Wrapper around CSS selectors.
@@ -60,8 +59,6 @@ impl<'i> TryFrom<&'i str> for Selector {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////
-
 // An implementation of `Parser` for `selectors`
 struct Parser;
 
@@ -70,8 +67,6 @@ impl<'i> parser::Parser<'i> for Parser {
     type Error = SelectorParseErrorKind<'i>;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////
-
 /// A simple implementation of `SelectorImpl` with no pseudo-classes or pseudo-elements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Simple;
@@ -79,18 +74,16 @@ pub struct Simple;
 impl parser::SelectorImpl for Simple {
     type ExtraMatchingData = InvalidationMatchingData;
     type AttrValue = AtomString;
-    type Identifier = AtomIdent;
-    type LocalName = AtomIdent;
-    type NamespacePrefix = AtomIdent;
-    type NamespaceUrl = Namespace;
-    type BorrowedNamespaceUrl = Namespace;
-    type BorrowedLocalName = WeakAtom;
+    type Identifier = AtomString;
+    type LocalName = AtomString;
+    type NamespacePrefix = AtomString;
+    type NamespaceUrl = AtomString;
+    type BorrowedNamespaceUrl = AtomString;
+    type BorrowedLocalName = AtomString;
 
     type PseudoElement = PseudoElement;
     type NonTSPseudoClass = NonTSPseudoClass;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////
 
 /// Non Tree-Structural Pseudo-Class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,8 +110,6 @@ impl cssparser::ToCss for NonTSPseudoClass {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////
-
 /// CSS Pseudo-Element
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PseudoElement {}
@@ -135,8 +126,6 @@ impl cssparser::ToCss for PseudoElement {
         dest.write_str("")
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////////////
 
 /// A struct holding the members necessary to invalidate document state
 /// selectors.
@@ -163,22 +152,6 @@ bitflags::bitflags! {
         const NS_DOCUMENT_STATE_WINDOW_INACTIVE = 1 << 1;
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-#[repr(transparent)]
-pub struct Namespace(pub Atom<EmptyStaticAtomSet>);
-
-impl std::ops::Deref for Namespace {
-    type Target = Atom<EmptyStaticAtomSet>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
