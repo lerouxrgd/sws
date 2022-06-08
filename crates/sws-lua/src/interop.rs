@@ -28,7 +28,13 @@ impl UserData for LuaHtml {
 
 #[derive(Clone)]
 pub struct LuaSelect(pub(crate) Select);
-impl UserData for LuaSelect {}
+impl UserData for LuaSelect {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::ToString, |_, sel, ()| {
+            Ok(format!("{:?}", sel.0))
+        });
+    }
+}
 
 pub struct LuaElementRef(pub(crate) ElementRef);
 impl UserData for LuaElementRef {
