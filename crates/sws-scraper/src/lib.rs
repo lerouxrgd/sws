@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate html5ever;
 
+pub mod atoms;
 pub mod element_ref;
 pub mod html;
 pub mod node;

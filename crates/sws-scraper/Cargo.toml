@@ -1,13 +1,15 @@
 [package]
 name = "sws-scraper"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-cssparser = "0.27"
+bitflags = "1"
+cssparser = "0.28"
 html5ever = "0.26"
-selectors = "0.22"
+selectors = "0.23"
 smallvec = "1"
+string_cache = "0.8"
 sws-tree = { path = "../sws-tree" }
 tendril = "0.4"
