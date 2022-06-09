@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::matching;
 use selectors::{Element, OpaqueElement};
@@ -66,12 +64,12 @@ impl Element for ElementRef {
     }
 
     fn has_local_name(&self, name: &AtomString) -> bool {
-        self.map_value(|v| v.name.local.deref() == name.deref())
+        self.map_value(|v| v.name.local.as_ref() == name.as_ref())
             .unwrap_or(false)
     }
 
     fn has_namespace(&self, namespace: &AtomString) -> bool {
-        self.map_value(|v| v.name.ns.deref() == namespace.deref())
+        self.map_value(|v| v.name.ns.as_ref() == namespace.as_ref())
             .unwrap_or(false)
     }
 
@@ -83,8 +81,8 @@ impl Element for ElementRef {
     ) -> bool {
         self.map_value(|v| {
             v.attrs.iter().any(|(key, value)| {
-                !matches!(*ns, NamespaceConstraint::Specific(url) if url.deref() != key.ns.deref())
-                    && local_name.deref() == key.local.deref()
+                !matches!(*ns, NamespaceConstraint::Specific(url) if url.as_ref() != key.ns.as_ref())
+                    && local_name.as_ref() == key.local.as_ref()
                     && operation.eval_str(value)
             })
         })
@@ -118,14 +116,14 @@ impl Element for ElementRef {
 
     fn has_id(&self, id: &AtomString, case_sensitivity: CaseSensitivity) -> bool {
         self.map_value(|v| match v.id {
-            Some(ref val) => case_sensitivity.eq(id.as_bytes(), val.as_bytes()),
+            Some(ref val) => case_sensitivity.eq(id.as_ref().as_bytes(), val.as_bytes()),
             None => false,
         })
         .unwrap_or(false)
     }
 
     fn has_class(&self, name: &AtomString, case_sensitivity: CaseSensitivity) -> bool {
-        self.map_value(|v| v.has_class(name, case_sensitivity))
+        self.map_value(|v| v.has_class(name.as_ref(), case_sensitivity))
             .unwrap_or(false)
     }
 

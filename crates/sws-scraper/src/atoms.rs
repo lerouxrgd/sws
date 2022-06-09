@@ -18,14 +18,6 @@ impl<'a> From<&'a str> for AtomString {
     }
 }
 
-impl std::ops::Deref for AtomString {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl cssparser::ToCss for AtomString {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result
     where
