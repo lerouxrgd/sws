@@ -1,5 +1,6 @@
-
-sws.sitemapUrl = "https://www.urbandictionary.com/sitemap-https.xml.gz"
+sws.seedSitemaps = {
+   "https://www.urbandictionary.com/sitemap-https.xml.gz"
+}
 
 function acceptUrl(sitemap, url)
    if sitemap == sws.Sitemap.URL_SET then

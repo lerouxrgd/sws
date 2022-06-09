@@ -148,7 +148,7 @@ pub struct SwsContext {
 
 impl SwsContext {
     pub fn new(tx_writer: Sender<csv::StringRecord>) -> Self {
-        // Dummy value, real values will be set by the scrapper for every page
+        // Dummy value, real values will be set by the crawler for every page
         let page_location = PageLocation::Path(PathBuf::from("/dev/null"));
 
         Self {

@@ -34,13 +34,19 @@ pub trait Scrapable {
 
     fn init(&mut self, _tx_url: mpsc::UnboundedSender<String>) {}
 
-    fn sitemap(&self) -> &str;
+    fn seed(&self) -> Seed;
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool;
 
     fn scrap(&mut self, page: String, location: PageLocation) -> anyhow::Result<()>;
 
     fn finalizer(&mut self) {}
+}
+
+#[derive(Debug, Clone)]
+pub enum Seed {
+    Sitemaps(Vec<String>),
+    Pages(Vec<String>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -376,21 +382,36 @@ where
     // Crawler
 
     let scraper = <T as Scrapable>::new(&scraper_conf)?;
-    let crawler = gather_urls(crawler_conf, &scraper, scraper.sitemap(), tx_url);
+    let seed = scraper.seed();
+    let crawler: Pin<Box<dyn Future<Output = Result<()>>>> = match seed {
+        Seed::Sitemaps(urls) => Box::pin(async move {
+            for sm_url in urls {
+                gather_urls(crawler_conf, &scraper, &sm_url, tx_url.clone()).await?;
+            }
+            Ok(())
+        }),
+        Seed::Pages(urls) => {
+            urls.into_iter().for_each(|page_url| {
+                tx_url.send(page_url).ok();
+            });
+            Box::pin(async move { Ok(()) })
+        }
+    };
 
     // Run all tasks
 
-    if crawler_conf.handle_sigint {
+    let interrupt: Pin<Box<dyn Future<Output = Result<()>>>> = if crawler_conf.handle_sigint {
         let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
-        let interrupt = async move {
+        Box::pin(async move {
             tokio::signal::ctrl_c().await?;
             scraper.finalizer();
             Err::<(), _>(anyhow!("Interrupted"))
-        };
-        try_join!(workers, downloader, crawler, interrupt)?;
+        })
     } else {
-        try_join!(workers, downloader, crawler)?;
-    }
+        Box::pin(async move { Ok(()) })
+    };
+
+    try_join!(workers, downloader, crawler, interrupt)?;
 
     Ok(())
 }

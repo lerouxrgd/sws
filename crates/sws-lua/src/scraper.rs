@@ -5,7 +5,7 @@ use crossbeam_channel::{bounded, select, unbounded, Sender};
 use mlua::{Function, Lua, LuaSerdeExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use sws_crawler::{CrawlerConfig, OnError, PageLocation, Scrapable, Sitemap};
+use sws_crawler::{CrawlerConfig, OnError, PageLocation, Scrapable, Seed, Sitemap};
 use sws_scraper::Html;
 
 use crate::interop::{LuaHtml, LuaStringRecord, LuaSwsContext, SwsContext};
@@ -22,7 +22,7 @@ pub struct LuaScraperConfig {
 
 pub struct LuaScraper {
     lua: Lua,
-    sitemap_url: String,
+    seed: Seed,
     context: LuaSwsContext,
 }
 
@@ -38,8 +38,15 @@ impl Scrapable for LuaScraper {
         let sws = lua.create_table()?;
         globals.set(globals::SWS, sws)?;
         lua.load(&fs::read_to_string(&config.script)?).exec()?;
-        let _: Function = globals.get(globals::ACCEPT_URL)?; // TODO: setup a defaut if absent
         let _: Function = globals.get(globals::SCRAP_PAGE)?;
+
+        if globals
+            .get::<_, Option<Function>>(globals::ACCEPT_URL)?
+            .is_none()
+        {
+            let accept_url = lua.create_function(|_, (_sm, _url): (String, String)| Ok(true))?;
+            globals.set(globals::ACCEPT_URL, accept_url)?;
+        }
 
         // Setup sws namespace
 
@@ -63,14 +70,34 @@ impl Scrapable for LuaScraper {
 
         // Retrieve custom values
 
-        let sitemap_url: String = sws.get(sws::SITEMAP_URL).map_err(|e| {
+        let sitemap_urls: Option<Vec<String>> = sws.get(sws::SEED_SITEMAPS).map_err(|e| {
             mlua::Error::RuntimeError(format!(
                 "Couldn't read {}.{} got: {}",
                 globals::SWS,
-                sws::SITEMAP_URL,
+                sws::SEED_SITEMAPS,
                 e
             ))
         })?;
+
+        let seed_urls: Option<Vec<String>> = sws.get(sws::SEED_PAGES).map_err(|e| {
+            mlua::Error::RuntimeError(format!(
+                "Couldn't read {}.{} got: {}",
+                globals::SWS,
+                sws::SEED_PAGES,
+                e
+            ))
+        })?;
+
+        let seed = match (sitemap_urls, seed_urls) {
+            (Some(urls), None) => Seed::Sitemaps(urls),
+            (None, Some(urls)) => Seed::Pages(urls),
+            _ => anyhow::bail!(
+                "Invalid seed, requires exactly one of: {ns}.{s1}, {ns}.{s2}",
+                ns = globals::SWS,
+                s1 = sws::SEED_SITEMAPS,
+                s2 = sws::SEED_PAGES
+            ),
+        };
 
         let csv_config: writer::CsvWriterConfig = sws
             .get::<_, Option<mlua::Value>>(sws::CSV_WRITER_CONFIG)?
@@ -112,11 +139,7 @@ impl Scrapable for LuaScraper {
 
         let context = LuaSwsContext::new(SwsContext::new(tx_record.clone()));
 
-        Ok(Self {
-            lua,
-            sitemap_url,
-            context,
-        })
+        Ok(Self { lua, seed, context })
     }
 
     fn init(&mut self, tx_url: tokio::sync::mpsc::UnboundedSender<String>) {
@@ -127,8 +150,8 @@ impl Scrapable for LuaScraper {
         TX_CSV_WRITER.get().map(|(_, tx_stop)| tx_stop.send(()));
     }
 
-    fn sitemap(&self) -> &str {
-        self.sitemap_url.as_ref()
+    fn seed(&self) -> Seed {
+        self.seed.clone()
     }
 
     fn scrap(&mut self, page: String, location: PageLocation) -> anyhow::Result<()> {

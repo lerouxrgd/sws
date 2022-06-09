@@ -1,8 +1,8 @@
 pub mod globals {
     //! The global namespace
 
-    pub const ACCEPT_URL: &str = "acceptUrl"; // Function
     pub const SCRAP_PAGE: &str = "scrapPage"; // Function
+    pub const ACCEPT_URL: &str = "acceptUrl"; // Function
 
     pub const SWS: &str = "sws"; // Table
 }
@@ -10,7 +10,9 @@ pub mod globals {
 pub mod sws {
     //! The `sws` namespace
 
-    pub const SITEMAP_URL: &str = "sitemapUrl"; // String
+    pub const SEED_SITEMAPS: &str = "seedSitemaps"; // Table
+    pub const SEED_PAGES: &str = "seedPages"; // Table
+
     pub const CSV_WRITER_CONFIG: &str = "csvWriterConfig"; // Table
     pub const CRAWLER_CONFIG: &str = "crawlerConfig"; // Table
 
