@@ -14,7 +14,11 @@ use crate::ns::{globals, sws};
 pub struct LuaHtml(pub(crate) Html);
 impl UserData for LuaHtml {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_method(sws::htlm::SELECT, |_, html, css_selector: String| {
+        methods.add_meta_method(MetaMethod::ToString, |_, html, ()| {
+            Ok(format!("{:?}", html.0))
+        });
+
+        methods.add_method(sws::html::SELECT, |_, html, css_selector: String| {
             let select = html.0.select(Selector::parse(&css_selector).map_err(|e| {
                 mlua::Error::RuntimeError(format!(
                     "Invalid CSS selector {:?}: {:?}",
@@ -22,6 +26,10 @@ impl UserData for LuaHtml {
                 ))
             })?);
             Ok(LuaSelect(select))
+        });
+
+        methods.add_method(sws::html::ROOT, |_, html, ()| {
+            Ok(LuaElementRef(html.0.root_element()))
         });
     }
 }
@@ -32,6 +40,29 @@ impl UserData for LuaSelect {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, sel, ()| {
             Ok(format!("{:?}", sel.0))
+        });
+
+        methods.add_method(sws::select::ITER, |lua, select, ()| {
+            let mut select = select.clone();
+            let iterator =
+                lua.create_function_mut(move |_, ()| Ok(select.0.next().map(LuaElementRef)));
+
+            Ok(iterator)
+        });
+
+        methods.add_method(sws::select::ENUMERATE, |lua, select, ()| {
+            let mut select = select.clone();
+            let mut i = 0;
+            let iterator = lua.create_function_mut(move |_, ()| {
+                i += 1;
+                let next = select.0.next().map(LuaElementRef);
+                if next.is_some() {
+                    Ok((Some(i), next))
+                } else {
+                    Ok((None, None))
+                }
+            });
+            Ok(iterator)
         });
     }
 }
@@ -59,6 +90,14 @@ impl UserData for LuaElementRef {
 
         methods.add_method(sws::elem_ref::INNER_TEXT, |_, elem, ()| {
             Ok(elem.0.inner_text())
+        });
+
+        methods.add_method(sws::elem_ref::ATTR, |_, elem, attr: String| {
+            if let Some(val) = elem.0.map_value(|el| el.attr(&attr).map(String::from)) {
+                Ok(val)
+            } else {
+                Ok(None)
+            }
         });
     }
 }

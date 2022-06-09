@@ -10,20 +10,19 @@ function acceptUrl(sitemap, url)
 end
 
 function scrapPage(page, context)
-   for i, def in sws.enumerate(page:select("section .definition")) do
+   for i, def in page:select("section .definition"):enumerate() do
       local record = sws.Record:new()
 
-      local word = sws.iter(def:select("h1 a.word"))()
-      word = word:innerHtml()
+      local word = def:select("h1 a.word"):iter()():innerHtml()
       if string.find(word, "\t") then goto continue end
 
-      local contributor = sws.iter(def:select(".contributor"))()
+      local contributor = def:select(".contributor"):iter()()
       local date = string.match(contributor:innerHtml(), ".*\\?</a>%s*(.*)\\?")
 
-      local meaning = sws.iter(def:select(".meaning"))()
+      local meaning = def:select(".meaning"):iter()()
       meaning = meaning:innerText():gsub("[\n\r]+", " "):gsub("\t+", "")
 
-      local example = sws.iter(def:select(".example"))()
+      local example = def:select(".example"):iter()()
       example = example:innerText():gsub("[\n\r]+", " "):gsub("\t+", "")
 
       if word and date and meaning and example then

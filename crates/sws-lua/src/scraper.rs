@@ -8,9 +8,7 @@ use serde::{Deserialize, Serialize};
 use sws_crawler::{CrawlerConfig, OnError, PageLocation, Scrapable, Sitemap};
 use sws_scraper::Html;
 
-use crate::interop::{
-    LuaElementRef, LuaHtml, LuaSelect, LuaStringRecord, LuaSwsContext, SwsContext,
-};
+use crate::interop::{LuaHtml, LuaStringRecord, LuaSwsContext, SwsContext};
 use crate::ns::{globals, sws};
 use crate::writer;
 
@@ -40,34 +38,12 @@ impl Scrapable for LuaScraper {
         let sws = lua.create_table()?;
         globals.set(globals::SWS, sws)?;
         lua.load(&fs::read_to_string(&config.script)?).exec()?;
-        let _: Function = globals.get(globals::ACCEPT_URL)?;
+        let _: Function = globals.get(globals::ACCEPT_URL)?; // TODO: setup a defaut if absent
         let _: Function = globals.get(globals::SCRAP_PAGE)?;
 
         // Setup sws namespace
 
         let sws = globals.get::<_, mlua::Table>(globals::SWS)?;
-
-        let select_iter = lua.create_function(move |lua, mut select: LuaSelect| {
-            let iterator =
-                lua.create_function_mut(move |_, ()| Ok(select.0.next().map(LuaElementRef)));
-            Ok(iterator)
-        })?;
-        sws.set(sws::ITER, select_iter)?;
-
-        let select_enumerate = lua.create_function(move |lua, mut select: LuaSelect| {
-            let mut i = 0;
-            let iterator = lua.create_function_mut(move |_, ()| {
-                i += 1;
-                let next = select.0.next().map(LuaElementRef);
-                if next.is_some() {
-                    Ok((Some(i), next))
-                } else {
-                    Ok((None, None))
-                }
-            });
-            Ok(iterator)
-        })?;
-        sws.set(sws::ENUMERATE, select_enumerate)?;
 
         let record = lua.create_table()?;
         let new_record =

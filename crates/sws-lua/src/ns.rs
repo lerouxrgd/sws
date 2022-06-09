@@ -14,12 +14,16 @@ pub mod sws {
     pub const CSV_WRITER_CONFIG: &str = "csvWriterConfig"; // Table
     pub const CRAWLER_CONFIG: &str = "crawlerConfig"; // Table
 
-    pub const ITER: &str = "iter"; // Function
-    pub const ENUMERATE: &str = "enumerate"; // Function
-
-    pub mod htlm {
+    pub mod html {
         //! The `Html` class
         pub const SELECT: &str = "select"; // Function
+        pub const ROOT: &str = "root"; // Function
+    }
+
+    pub mod select {
+        //! The `Select` class
+        pub const ITER: &str = "iter"; // Function
+        pub const ENUMERATE: &str = "enumerate"; // Function
     }
 
     pub mod elem_ref {
@@ -27,6 +31,7 @@ pub mod sws {
         pub const SELECT: &str = "select"; // Function
         pub const INNER_HTML: &str = "innerHtml"; // Function
         pub const INNER_TEXT: &str = "innerText"; // Function
+        pub const ATTR: &str = "attr"; // Function
     }
 
     pub const RECORD: &str = "Record"; // Table
