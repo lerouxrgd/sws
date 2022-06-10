@@ -2,6 +2,7 @@ use std::future::Future;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{cmp, thread};
@@ -38,7 +39,7 @@ pub trait Scrapable {
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool;
 
-    fn scrap(&mut self, page: String, location: PageLocation) -> anyhow::Result<()>;
+    fn scrap(&mut self, page: String, location: Rc<PageLocation>) -> anyhow::Result<()>;
 
     fn finalizer(&mut self) {}
 }
@@ -321,11 +322,12 @@ where
                     if stop.load(Ordering::Relaxed) {
                         break;
                     }
-                    match scraper.scrap(page, location) {
+                    let location = Rc::new(location);
+                    match scraper.scrap(page, location.clone()) {
                         Ok(()) => (),
                         Err(e) => match crawler_conf.on_scrap_error {
                             OnError::SkipAndLog => {
-                                log::error!("Skipping page scrap: {e}");
+                                log::error!("Skipping scrap for page {location:?} got: {e}");
                             }
                             OnError::Fail => {
                                 stop.store(true, Ordering::SeqCst);

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::{fs, thread};
 
 use crossbeam_channel::{bounded, select, unbounded, Sender};
@@ -154,7 +155,7 @@ impl Scrapable for LuaScraper {
         self.seed.clone()
     }
 
-    fn scrap(&mut self, page: String, location: PageLocation) -> anyhow::Result<()> {
+    fn scrap(&mut self, page: String, location: Rc<PageLocation>) -> anyhow::Result<()> {
         let scrap_page: Function = self
             .lua
             .globals()
@@ -162,7 +163,7 @@ impl Scrapable for LuaScraper {
             .expect(&format!("Function {} not found", globals::SCRAP_PAGE)); // Ensured in constructor
 
         let page = LuaHtml(Html::parse_document(&page));
-        self.context.borrow_mut().page_location = location;
+        self.context.borrow_mut().page_location = Rc::downgrade(&location);
 
         Ok(scrap_page
             .call::<_, ()>((page, self.context.clone()))
@@ -223,7 +224,10 @@ pub fn scrap_dir(
     let mut scraper = LuaScraper::new(&config)?;
     for path in glob::glob(pattern)? {
         let path = path?;
-        match scraper.scrap(fs::read_to_string(&path)?, PageLocation::Path(path)) {
+        match scraper.scrap(
+            fs::read_to_string(&path)?,
+            Rc::new(PageLocation::Path(path)),
+        ) {
             Ok(()) => (),
             Err(e) => match on_error {
                 OnError::SkipAndLog => {
@@ -246,7 +250,7 @@ pub fn scrap_page(
     location: PageLocation,
 ) -> anyhow::Result<()> {
     let mut scraper = LuaScraper::new(&config)?;
-    scraper.scrap(page, location)?;
+    scraper.scrap(page, Rc::new(location))?;
     scraper.finalizer();
     Ok(())
 }

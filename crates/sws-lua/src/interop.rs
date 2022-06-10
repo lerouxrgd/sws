@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::cell::{Ref, RefMut};
-use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::{fs, thread};
 
 use crossbeam_channel::Sender;
@@ -115,45 +114,52 @@ impl UserData for LuaStringRecord {
 }
 
 #[derive(Debug)]
-pub struct LuaPageLocation(pub(crate) PageLocation);
+pub struct LuaPageLocation(pub(crate) Weak<PageLocation>);
 impl UserData for LuaPageLocation {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, pl, ()| Ok(format!("{:?}", pl.0)));
 
         methods.add_method(sws::page_location::KIND, |lua, pl, ()| {
-            let location = match pl.0 {
-                PageLocation::Path(_) => sws::location::PATH,
-                PageLocation::Url(_) => sws::location::URL,
-            };
-            lua.globals()
-                .get::<_, mlua::Table>(globals::SWS)?
-                .get::<_, mlua::Table>(sws::LOCATION)?
-                .get::<_, String>(location)
+            if let Some(loc) = pl.0.upgrade() {
+                let location = match loc.as_ref() {
+                    PageLocation::Path(_) => sws::location::PATH,
+                    PageLocation::Url(_) => sws::location::URL,
+                };
+                lua.globals()
+                    .get::<_, mlua::Table>(globals::SWS)?
+                    .get::<_, mlua::Table>(sws::LOCATION)?
+                    .get::<_, String>(location)
+                    .map(Some)
+            } else {
+                Ok(None)
+            }
         });
 
         methods.add_method(sws::page_location::GET, |_, pl, ()| {
-            Ok(match &pl.0 {
-                PageLocation::Path(p) => format!("{}", fs::canonicalize(p)?.display()),
-                PageLocation::Url(url) => url.to_string(),
-            })
+            if let Some(loc) = pl.0.upgrade() {
+                let loc = match loc.as_ref() {
+                    PageLocation::Path(p) => format!("{}", fs::canonicalize(p)?.display()),
+                    PageLocation::Url(url) => url.to_string(),
+                };
+                Ok(Some(loc))
+            } else {
+                Ok(None)
+            }
         });
     }
 }
 
 pub struct SwsContext {
     pub(crate) tx_writer: Sender<csv::StringRecord>,
-    pub(crate) page_location: PageLocation,
+    pub(crate) page_location: Weak<PageLocation>,
     pub(crate) tx_url: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 }
 
 impl SwsContext {
     pub fn new(tx_writer: Sender<csv::StringRecord>) -> Self {
-        // Dummy value, real values will be set by the crawler for every page
-        let page_location = PageLocation::Path(PathBuf::from("/dev/null"));
-
         Self {
             tx_writer,
-            page_location,
+            page_location: Weak::new(),
             tx_url: None,
         }
     }
