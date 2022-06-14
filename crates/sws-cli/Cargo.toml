@@ -9,6 +9,7 @@ anyhow = "1"
 clap = { version = "3", features = ["derive"] }
 clap_complete = "3"
 env_logger = "0.9"
+num_cpus = "1"
 reqwest = { version = "0.11", features = ["blocking"] }
 serde_yaml = "0.8"
 sws-crawler = { path = "../sws-crawler", features = ["clap"] }

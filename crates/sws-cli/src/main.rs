@@ -1,11 +1,11 @@
-use std::fs::{self, File};
+use std::fs::File;
 use std::path::PathBuf;
-use std::{env, io};
+use std::{cmp, env, io};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
-use sws_crawler::{crawl_site, CrawlerConfig, OnError, PageLocation};
-use sws_lua::{scrap_dir, scrap_page, LuaScraper, LuaScraperConfig};
+use sws_crawler::{crawl_site, CrawlerConfig, OnError, PageLocation, Scrapable};
+use sws_lua::{scrap_glob, scrap_page, LuaScraper, LuaScraperConfig};
 use tokio::runtime;
 
 /// Sitemap Web Scraper
@@ -45,11 +45,11 @@ pub struct CrawlArgs {
     #[clap(display_order(5), long)]
     pub page_buffer: Option<usize>,
 
-    /// Override crawler's maximum concurrent page downloads
-    #[clap(display_order(6), long)]
+    /// Override crawler's maximum concurrent downloads for pages
+    #[clap(display_order(6), long = "conc-dl")]
     pub concurrent_downloads: Option<usize>,
 
-    /// Override crawler's number of CPU workers used to parse pages
+    /// Override crawler's number of CPU workers used to scrap pages
     #[clap(display_order(7), long)]
     pub num_workers: Option<usize>,
 
@@ -111,22 +111,23 @@ pub struct ScrapArgs {
     #[clap(display_order(1), parse(from_os_str), long, short)]
     pub script: PathBuf,
 
-    /// A local html page to scrap
-    #[clap(display_order(2), group = "pages", parse(from_os_str), long)]
-    pub file: Option<PathBuf>,
-
     /// A distant html page to scrap
-    #[clap(display_order(3), group = "pages", long)]
+    #[clap(display_order(2), group = "pages", long)]
     pub url: Option<String>,
 
     /// A glob pattern to select local files to scrap
-    #[clap(display_order(4), group = "pages", long)]
+    #[clap(display_order(3), group = "pages", long)]
     pub glob: Option<String>,
 
-    /// Scrap error handling strategy when processing glob files
-    #[clap(display_order(5), arg_enum, long)]
-    #[clap(conflicts_with = "file", conflicts_with = "url")]
+    /// Scrap error handling strategy when scraping glob files
+    #[clap(display_order(4), arg_enum, long)]
+    #[clap(conflicts_with = "url")]
     pub on_error: Option<OnError>,
+
+    /// Set the number of CPU workers when scraping glob files
+    #[clap(display_order(5), long)]
+    #[clap(conflicts_with = "url")]
+    pub num_workers: Option<usize>,
 
     /// Optional file that will contain scrapped data, stdout otherwise
     #[clap(display_order(6), parse(from_os_str), long, short)]
@@ -151,8 +152,8 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
         csv_file: output_file.clone(),
     };
 
-    match (args.url, args.file, args.glob) {
-        (Some(url), None, None) => {
+    match (args.url, args.glob) {
+        (Some(url), None) => {
             let ua = CrawlerConfig::try_from(&config)?.user_agent;
             let client = reqwest::blocking::ClientBuilder::new()
                 .user_agent(ua)
@@ -160,12 +161,13 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
             let page = client.get(&url).send()?.text()?;
             scrap_page(&config, page, PageLocation::Url(url))?
         }
-        (None, Some(path), None) => {
-            let page = fs::read_to_string(&path)?;
-            scrap_page(&config, page, PageLocation::Path(path))?
-        }
-        (None, None, Some(pattern)) => {
-            scrap_dir(&config, &pattern, args.on_error.unwrap_or(OnError::Fail))?;
+        (None, Some(pattern)) => {
+            let num_workers = args.num_workers.unwrap_or(cmp::max(1, num_cpus::get()));
+            let on_error = args.on_error.unwrap_or(OnError::Fail);
+            let mut scraper = LuaScraper::new(&config)?;
+            let res = scrap_glob(&config, &pattern, on_error, num_workers);
+            scraper.finalizer();
+            res?;
         }
         _ => anyhow::bail!("Invalid arguments"),
     }

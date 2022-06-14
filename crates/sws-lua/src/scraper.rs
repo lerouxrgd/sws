@@ -216,31 +216,52 @@ impl TryFrom<&LuaScraperConfig> for CrawlerConfig {
     }
 }
 
-pub fn scrap_dir(
+pub fn scrap_glob(
     config: &LuaScraperConfig,
     pattern: &str,
     on_error: OnError,
+    num_workers: usize,
 ) -> anyhow::Result<()> {
-    let mut scraper = LuaScraper::new(&config)?;
-    for path in glob::glob(pattern)? {
-        let path = path?;
-        match scraper.scrap(
-            fs::read_to_string(&path)?,
-            Rc::new(PageLocation::Path(path)),
-        ) {
-            Ok(()) => (),
-            Err(e) => match on_error {
-                OnError::SkipAndLog => {
-                    log::error!("Skipping page scrap: {e}");
+    let (tx_path, rx_path) = unbounded::<PathBuf>();
+
+    let mut workers = vec![];
+    for id in 0..num_workers {
+        let rx_path = rx_path.clone();
+        let config = config.clone();
+        let worker = thread::Builder::new()
+            .name(format!("{id}"))
+            .spawn(move || {
+                let mut scraper = LuaScraper::new(&config)?;
+                for path in rx_path.into_iter() {
+                    match scraper.scrap(
+                        fs::read_to_string(&path)?,
+                        Rc::new(PageLocation::Path(path)),
+                    ) {
+                        Ok(()) => (),
+                        Err(e) => match on_error {
+                            OnError::SkipAndLog => {
+                                log::error!("Skipping page scrap: {e}");
+                            }
+                            OnError::Fail => {
+                                return Err(e);
+                            }
+                        },
+                    }
                 }
-                OnError::Fail => {
-                    scraper.finalizer();
-                    return Err(e);
-                }
-            },
-        }
+                Ok::<(), anyhow::Error>(())
+            })?;
+        workers.push(worker);
     }
-    scraper.finalizer();
+
+    for path in glob::glob(pattern)? {
+        tx_path.send(path?).ok();
+    }
+    drop(tx_path);
+
+    for w in workers {
+        w.join().unwrap()?;
+    }
+
     Ok(())
 }
 
