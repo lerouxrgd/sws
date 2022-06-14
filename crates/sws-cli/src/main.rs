@@ -53,10 +53,6 @@ pub struct CrawlArgs {
     #[clap(display_order(7), long)]
     pub num_workers: Option<usize>,
 
-    /// No SIGINT handling, scraper finalizer won't be called
-    #[clap(display_order(8), long)]
-    pub no_sigint: bool,
-
     /// Override crawler's download error handling strategy
     #[clap(display_order(9), arg_enum, long)]
     pub on_dl_error: Option<OnError>,
@@ -101,9 +97,6 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
     }
     if let Some(on_scrap_error) = args.on_scrap_error {
         crawler_conf.on_scrap_error = on_scrap_error;
-    }
-    if args.no_sigint {
-        crawler_conf.handle_sigint = false;
     }
 
     let rt = runtime::Builder::new_multi_thread().enable_all().build()?;

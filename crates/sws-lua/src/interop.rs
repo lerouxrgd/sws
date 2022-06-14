@@ -5,7 +5,7 @@ use std::{fs, thread};
 
 use crossbeam_channel::Sender;
 use mlua::{MetaMethod, UserData, UserDataMethods};
-use sws_crawler::PageLocation;
+use sws_crawler::{CountedTx, PageLocation};
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
 
 use crate::ns::{globals, sws};
@@ -152,7 +152,7 @@ impl UserData for LuaPageLocation {
 pub struct SwsContext {
     pub(crate) tx_writer: Sender<csv::StringRecord>,
     pub(crate) page_location: Weak<PageLocation>,
-    pub(crate) tx_url: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    pub(crate) tx_url: Option<CountedTx>,
 }
 
 impl SwsContext {
@@ -206,7 +206,7 @@ impl UserData for LuaSwsContext {
 
         methods.add_method(sws::context::SEND_URL, |_, ctx, url: String| {
             if let Some(tx_url) = &ctx.borrow().tx_url {
-                tx_url.send(url).ok();
+                tx_url.send(url);
             } else {
                 log::warn!("Context not initalized, coudln't send URL {url}")
             }

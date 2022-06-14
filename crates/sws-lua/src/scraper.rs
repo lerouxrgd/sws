@@ -6,7 +6,7 @@ use crossbeam_channel::{bounded, select, unbounded, Sender};
 use mlua::{Function, Lua, LuaSerdeExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use sws_crawler::{CrawlerConfig, OnError, PageLocation, Scrapable, Seed, Sitemap};
+use sws_crawler::{CountedTx, CrawlerConfig, OnError, PageLocation, Scrapable, Seed, Sitemap};
 use sws_scraper::Html;
 
 use crate::interop::{LuaHtml, LuaStringRecord, LuaSwsContext, SwsContext};
@@ -143,7 +143,7 @@ impl Scrapable for LuaScraper {
         Ok(Self { lua, seed, context })
     }
 
-    fn init(&mut self, tx_url: tokio::sync::mpsc::UnboundedSender<String>) {
+    fn init(&mut self, tx_url: CountedTx) {
         self.context.borrow_mut().tx_url = Some(tx_url);
     }
 
