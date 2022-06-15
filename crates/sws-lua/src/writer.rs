@@ -1,3 +1,5 @@
+use std::{fs, io};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -26,6 +28,7 @@ impl Default for CsvWriterConfig {
 fn default_csv_delimiter() -> char {
     CsvWriterConfig::default().delimiter
 }
+
 fn default_csv_terminator() -> CsvTerminator {
     CsvWriterConfig::default().terminator
 }
@@ -58,5 +61,30 @@ impl From<&CsvWriterConfig> for csv::WriterBuilder {
             builder.double_quote(true);
         }
         builder
+    }
+}
+
+pub enum CsvWriter {
+    File(csv::Writer<fs::File>),
+    Stdout(csv::Writer<io::Stdout>),
+}
+
+impl CsvWriter {
+    pub fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Self::File(wtr) => wtr.flush(),
+            Self::Stdout(wtr) => wtr.flush(),
+        }
+    }
+
+    pub fn write_record<I, T>(&mut self, record: I) -> csv::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<[u8]>,
+    {
+        match self {
+            Self::File(wtr) => wtr.write_record(record),
+            Self::Stdout(wtr) => wtr.write_record(record),
+        }
     }
 }

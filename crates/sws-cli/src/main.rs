@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::path::PathBuf;
 use std::{cmp, env, io};
 
@@ -26,16 +25,16 @@ pub enum SubCommand {
     Completion,
 }
 
-/// Crawl sitemap and scrap pages content
+/// Crawl sitemaps and scrap pages content
 #[derive(Debug, clap::Args)]
 pub struct CrawlArgs {
     /// Path to the Lua script that defines scraping logic
     #[clap(display_order(1), parse(from_os_str), long, short)]
     pub script: PathBuf,
 
-    /// Output file that will contain scrapped data
+    /// Optional file that will contain scrapped data, stdout otherwise
     #[clap(display_order(2), parse(from_os_str), long, short)]
-    pub output_file: PathBuf,
+    pub output_file: Option<PathBuf>,
 
     /// Override crawler's user agent
     #[clap(display_order(4), long)]
@@ -139,17 +138,9 @@ pub struct ScrapArgs {
 }
 
 pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
-    let (output_file, temp_file) = if let Some(output_file) = args.output_file {
-        (output_file, None)
-    } else {
-        let temp_file = tempfile::NamedTempFile::new()?;
-        let output_file = temp_file.path().into();
-        (output_file, Some(temp_file))
-    };
-
     let config = LuaScraperConfig {
         script: args.script,
-        csv_file: output_file.clone(),
+        csv_file: args.output_file,
     };
 
     match (args.url, args.glob) {
@@ -170,11 +161,6 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
             res?;
         }
         _ => anyhow::bail!("Invalid arguments"),
-    }
-
-    if temp_file.is_some() {
-        let mut reader = io::BufReader::new(File::open(&output_file)?);
-        io::copy(&mut reader, &mut io::stdout())?;
     }
 
     Ok(())

@@ -18,7 +18,7 @@ static TX_CSV_WRITER: OnceCell<(Sender<csv::StringRecord>, Sender<()>)> = OnceCe
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LuaScraperConfig {
     pub script: PathBuf,
-    pub csv_file: PathBuf,
+    pub csv_file: Option<PathBuf>,
 }
 
 pub struct LuaScraper {
@@ -116,7 +116,17 @@ impl Scrapable for LuaScraper {
             let (tx_record, rx_record) = unbounded::<csv::StringRecord>();
             let (tx_stop, rx_stop) = bounded::<()>(1);
 
-            let mut wtr = csv::WriterBuilder::from(&csv_config).from_path(&config.csv_file)?;
+            let mut wtr = match &config.csv_file {
+                Some(path) => {
+                    let wtr = csv::WriterBuilder::from(&csv_config).from_path(path)?;
+                    writer::CsvWriter::File(wtr)
+                }
+                None => {
+                    let wtr = csv::WriterBuilder::from(&csv_config).from_writer(std::io::stdout());
+                    writer::CsvWriter::Stdout(wtr)
+                }
+            };
+
             thread::spawn(move || loop {
                 select! {
                     recv(rx_stop) -> _ => {
