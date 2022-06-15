@@ -30,7 +30,7 @@ pub struct CrawlerConfig {
 impl Default for CrawlerConfig {
     fn default() -> Self {
         Self {
-            user_agent: format!("SWSbot/{}", env!("CARGO_PKG_VERSION")),
+            user_agent: String::from("SWSbot"),
             page_buffer: 10_000,
             concurrent_downloads: 100,
             num_workers: cmp::max(1, num_cpus::get().saturating_sub(2)),
