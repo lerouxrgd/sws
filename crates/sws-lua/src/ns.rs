@@ -33,7 +33,12 @@ pub mod sws {
         pub const SELECT: &str = "select"; // Function
         pub const INNER_HTML: &str = "innerHtml"; // Function
         pub const INNER_TEXT: &str = "innerText"; // Function
+        pub const NAME: &str = "name"; // Function
+        pub const ID: &str = "id"; // Function
+        pub const HAS_CLASS: &str = "hasClass"; // Function
+        pub const CLASSES: &str = "classes"; // Function
         pub const ATTR: &str = "attr"; // Function
+        pub const ATTRS: &str = "attrs"; // Function
     }
 
     pub const RECORD: &str = "Record"; // Table

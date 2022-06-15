@@ -6,6 +6,7 @@ use std::{fs, thread};
 use crossbeam_channel::Sender;
 use mlua::{MetaMethod, UserData, UserDataMethods};
 use sws_crawler::{CountedTx, PageLocation};
+use sws_scraper::CaseSensitivity;
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
 
 use crate::ns::{globals, sws};
@@ -91,12 +92,48 @@ impl UserData for LuaElementRef {
             Ok(elem.0.inner_text())
         });
 
+        methods.add_method(sws::elem_ref::NAME, |_, elem, ()| {
+            Ok(elem.0.map_value(|el| el.name().to_string()))
+        });
+
+        methods.add_method(sws::elem_ref::ID, |_, elem, ()| {
+            Ok(elem
+                .0
+                .map_value(|el| el.id().map(String::from))
+                .unwrap_or(None))
+        });
+
+        methods.add_method(sws::elem_ref::HAS_CLASS, |_, elem, class: String| {
+            Ok(elem
+                .0
+                .map_value(|el| el.has_class(&class, CaseSensitivity::AsciiCaseInsensitive)))
+        });
+
+        methods.add_method(sws::elem_ref::CLASSES, |lua, elem, ()| {
+            let classes = lua.create_table()?;
+            elem.0.map_value(|el| {
+                el.classes().enumerate().for_each(|(i, c)| {
+                    classes.set(i + 1, c).ok();
+                });
+            });
+            Ok(classes)
+        });
+
         methods.add_method(sws::elem_ref::ATTR, |_, elem, attr: String| {
-            if let Some(val) = elem.0.map_value(|el| el.attr(&attr).map(String::from)) {
-                Ok(val)
-            } else {
-                Ok(None)
-            }
+            Ok(elem
+                .0
+                .map_value(|el| el.attr(&attr).map(String::from))
+                .unwrap_or(None))
+        });
+
+        methods.add_method(sws::elem_ref::ATTRS, |lua, elem, ()| {
+            let attrs = lua.create_table()?;
+            elem.0.map_value(|el| {
+                el.attrs().for_each(|(k, v)| {
+                    attrs.set(k, v).ok();
+                });
+            });
+            Ok(attrs)
         });
     }
 }

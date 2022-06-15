@@ -206,10 +206,6 @@ impl fmt::Debug for Text {
 }
 
 /// A Map of attributes that doesn't preserve the order of the attributes.
-///
-/// Please enable the `deterministic` feature for order-preserving
-/// (de)serialization.
-#[cfg(not(feature = "deterministic"))]
 pub type Attributes = HashMap<QualName, StrTendril>;
 
 /// An HTML element.
@@ -308,7 +304,6 @@ impl<'a> Iterator for Classes<'a> {
 }
 
 /// An iterator over a node's attributes.
-#[cfg(not(feature = "deterministic"))]
 pub type AttributesIter<'a> = hash_map::Iter<'a, QualName, StrTendril>;
 
 /// Iterator over attributes.
