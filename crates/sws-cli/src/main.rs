@@ -17,9 +17,9 @@ pub struct Args {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum SubCommand {
-    #[clap(name = "crawl")]
+    #[clap(display_order(1), name = "crawl")]
     Crawl(CrawlArgs),
-    #[clap(name = "scrap")]
+    #[clap(display_order(2), name = "scrap")]
     Scrap(ScrapArgs),
     #[clap(hide = true)]
     Completion,
@@ -120,7 +120,7 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
     rt.block_on(crawl_site::<LuaScraper>(&crawler_conf, &scraper_conf))
 }
 
-/// Scrap a single page and print the result to stdout
+/// Scrap a single remote page or multiple local pages
 #[derive(Debug, clap::Args)]
 #[clap(group = clap::ArgGroup::new("pages").required(true))]
 #[clap(group = clap::ArgGroup::new("mode").requires_all(&["output-file"]))]
@@ -134,15 +134,15 @@ pub struct ScrapArgs {
     pub url: Option<String>,
 
     /// A glob pattern to select local files to scrap
-    #[clap(display_order(3), group = "pages", long)]
+    #[clap(display_order(3), group = "pages", long = "files")]
     pub glob: Option<String>,
 
-    /// Scrap error handling strategy when scraping glob files
+    /// Scrap error handling strategy when scraping local files
     #[clap(display_order(4), arg_enum, long)]
     #[clap(conflicts_with = "url")]
     pub on_error: Option<OnError>,
 
-    /// Set the number of CPU workers when scraping glob files
+    /// Set the number of CPU workers when scraping local files
     #[clap(display_order(5), long)]
     #[clap(conflicts_with = "url")]
     pub num_workers: Option<usize>,
