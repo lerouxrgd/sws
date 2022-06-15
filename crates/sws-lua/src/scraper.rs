@@ -19,6 +19,7 @@ static TX_CSV_WRITER: OnceCell<(Sender<csv::StringRecord>, Sender<()>)> = OnceCe
 pub struct LuaScraperConfig {
     pub script: PathBuf,
     pub csv_file: Option<PathBuf>,
+    pub file_mode: Option<writer::FileMode>,
 }
 
 pub struct LuaScraper {
@@ -118,7 +119,13 @@ impl Scrapable for LuaScraper {
 
             let mut wtr = match &config.csv_file {
                 Some(path) => {
-                    let wtr = csv::WriterBuilder::from(&csv_config).from_path(path)?;
+                    let opts: fs::OpenOptions = config
+                        .file_mode
+                        .as_ref()
+                        .map(Clone::clone)
+                        .unwrap_or_default()
+                        .into();
+                    let wtr = csv::WriterBuilder::from(&csv_config).from_writer(opts.open(path)?);
                     writer::CsvWriter::File(wtr)
                 }
                 None => {

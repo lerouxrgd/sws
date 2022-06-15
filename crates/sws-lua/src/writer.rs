@@ -88,3 +88,29 @@ impl CsvWriter {
         }
     }
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum FileMode {
+    Create,
+    Append,
+    Truncate,
+}
+
+impl Default for FileMode {
+    fn default() -> Self {
+        Self::Create
+    }
+}
+
+impl From<FileMode> for fs::OpenOptions {
+    fn from(mode: FileMode) -> Self {
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true);
+        match mode {
+            FileMode::Create => opts.create_new(true),
+            FileMode::Append => opts.create(true).append(true),
+            FileMode::Truncate => opts.create(true).truncate(true),
+        };
+        opts
+    }
+}

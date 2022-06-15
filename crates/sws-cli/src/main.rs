@@ -4,7 +4,7 @@ use std::{cmp, env, io};
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
 use sws_crawler::{crawl_site, CrawlerConfig, OnError, PageLocation, Scrapable};
-use sws_lua::{scrap_glob, scrap_page, LuaScraper, LuaScraperConfig};
+use sws_lua::{scrap_glob, scrap_page, writer::FileMode, LuaScraper, LuaScraperConfig};
 use tokio::runtime;
 
 /// Sitemap Web Scraper
@@ -27,29 +27,38 @@ pub enum SubCommand {
 
 /// Crawl sitemaps and scrap pages content
 #[derive(Debug, clap::Args)]
+#[clap(group = clap::ArgGroup::new("mode").requires_all(&["output-file"]))]
 pub struct CrawlArgs {
     /// Path to the Lua script that defines scraping logic
     #[clap(display_order(1), parse(from_os_str), long, short)]
     pub script: PathBuf,
 
-    /// Optional file that will contain scrapped data, stdout otherwise
+    /// Optional file that will contain scraped data, stdout otherwise
     #[clap(display_order(2), parse(from_os_str), long, short)]
     pub output_file: Option<PathBuf>,
 
+    /// Append to output file
+    #[clap(display_order(3), group = "mode", long)]
+    pub append: bool,
+
+    /// Truncate output file
+    #[clap(display_order(4), group = "mode", long)]
+    pub truncate: bool,
+
     /// Override crawler's user agent
-    #[clap(display_order(4), long)]
+    #[clap(display_order(5), long)]
     pub user_agent: Option<String>,
 
     /// Override crawler's page buffer size
-    #[clap(display_order(5), long)]
+    #[clap(display_order(6), long)]
     pub page_buffer: Option<usize>,
 
     /// Override crawler's maximum concurrent downloads for pages
-    #[clap(display_order(6), long = "conc-dl")]
+    #[clap(display_order(7), long = "conc-dl")]
     pub concurrent_downloads: Option<usize>,
 
     /// Override crawler's number of CPU workers used to scrap pages
-    #[clap(display_order(7), long)]
+    #[clap(display_order(8), long)]
     pub num_workers: Option<usize>,
 
     /// Override crawler's download error handling strategy
@@ -70,9 +79,18 @@ pub struct CrawlArgs {
 }
 
 pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
+    let file_mode = if args.append {
+        Some(FileMode::Append)
+    } else if args.truncate {
+        Some(FileMode::Truncate)
+    } else {
+        None
+    };
+
     let scraper_conf = LuaScraperConfig {
         script: args.script,
         csv_file: args.output_file,
+        file_mode,
     };
 
     let mut crawler_conf = CrawlerConfig::try_from(&scraper_conf)?;
@@ -105,6 +123,7 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
 /// Scrap a single page and print the result to stdout
 #[derive(Debug, clap::Args)]
 #[clap(group = clap::ArgGroup::new("pages").required(true))]
+#[clap(group = clap::ArgGroup::new("mode").requires_all(&["output-file"]))]
 pub struct ScrapArgs {
     /// Path to the Lua script that defines scraping logic
     #[clap(display_order(1), parse(from_os_str), long, short)]
@@ -128,19 +147,36 @@ pub struct ScrapArgs {
     #[clap(conflicts_with = "url")]
     pub num_workers: Option<usize>,
 
-    /// Optional file that will contain scrapped data, stdout otherwise
+    /// Optional file that will contain scraped data, stdout otherwise
     #[clap(display_order(6), parse(from_os_str), long, short)]
     pub output_file: Option<PathBuf>,
 
+    /// Append to output file
+    #[clap(display_order(7), group = "mode", long)]
+    pub append: bool,
+
+    /// Truncate output file
+    #[clap(display_order(8), group = "mode", long)]
+    pub truncate: bool,
+
     /// Don't output logs
-    #[clap(display_order(7), long, short)]
+    #[clap(display_order(9), long, short)]
     pub quiet: bool,
 }
 
 pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
+    let file_mode = if args.append {
+        Some(FileMode::Append)
+    } else if args.truncate {
+        Some(FileMode::Truncate)
+    } else {
+        None
+    };
+
     let config = LuaScraperConfig {
         script: args.script,
         csv_file: args.output_file,
+        file_mode,
     };
 
     match (args.url, args.glob) {
