@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sws_crawler::{CountedTx, CrawlerConfig, OnError, PageLocation, Scrapable, Seed, Sitemap};
 use sws_scraper::Html;
 
-use crate::interop::{LuaHtml, LuaStringRecord, LuaSwsContext, SwsContext};
+use crate::interop::{LuaDate, LuaHtml, LuaStringRecord, LuaSwsContext, SwsContext};
 use crate::ns::{globals, sws};
 use crate::writer;
 
@@ -54,11 +54,12 @@ impl Scrapable for LuaScraper {
 
         let sws = globals.get::<_, mlua::Table>(globals::SWS)?;
 
-        let record = lua.create_table()?;
-        let new_record =
-            lua.create_function(|_, ()| Ok(LuaStringRecord(csv::StringRecord::new())))?;
-        record.set(sws::record::NEW, new_record)?;
-        sws.set(sws::RECORD, record)?;
+        let new_record = lua.create_function(|_, ()| Ok(LuaStringRecord::new()))?;
+        sws.set(sws::RECORD, new_record)?;
+
+        let new_date =
+            lua.create_function(|_, (d, fmt): (String, String)| LuaDate::new(&d, &fmt))?;
+        sws.set(sws::DATE, new_date)?;
 
         let location = lua.create_table()?;
         location.set(sws::location::PATH, sws::location::PATH)?;

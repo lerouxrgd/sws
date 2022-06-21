@@ -138,18 +138,6 @@ impl UserData for LuaElementRef {
     }
 }
 
-#[derive(Clone)]
-pub struct LuaStringRecord(pub(crate) csv::StringRecord);
-impl UserData for LuaStringRecord {
-    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-        methods.add_meta_method(MetaMethod::ToString, |_, r, ()| Ok(format!("{:?}", r.0)));
-
-        methods.add_method_mut(sws::record::PUSH_FIELD, |_, record, field: String| {
-            Ok(record.0.push_field(&field))
-        });
-    }
-}
-
 #[derive(Debug)]
 pub struct LuaPageLocation(pub(crate) Weak<PageLocation>);
 impl UserData for LuaPageLocation {
@@ -182,6 +170,45 @@ impl UserData for LuaPageLocation {
             } else {
                 Ok(None)
             }
+        });
+    }
+}
+
+#[derive(Clone)]
+pub struct LuaStringRecord(pub(crate) csv::StringRecord);
+
+impl LuaStringRecord {
+    pub fn new() -> Self {
+        Self(csv::StringRecord::new())
+    }
+}
+
+impl UserData for LuaStringRecord {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::ToString, |_, r, ()| Ok(format!("{:?}", r.0)));
+
+        methods.add_method_mut(sws::record::PUSH_FIELD, |_, record, field: String| {
+            Ok(record.0.push_field(&field))
+        });
+    }
+}
+
+pub struct LuaDate(pub(crate) chrono::NaiveDate);
+
+impl LuaDate {
+    pub fn new(d: &str, fmt: &str) -> mlua::Result<Self> {
+        Ok(Self(chrono::NaiveDate::parse_from_str(d, fmt).map_err(
+            |e| mlua::Error::RuntimeError(format!("Couldn't parse date {d} got: {e}")),
+        )?))
+    }
+}
+
+impl UserData for LuaDate {
+    fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::ToString, |_, d, ()| Ok(format!("{:?}", d.0)));
+
+        methods.add_method(sws::date::FORMAT, |_, d, fmt: String| {
+            Ok(d.0.format(&fmt).to_string())
         });
     }
 }

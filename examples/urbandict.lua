@@ -12,13 +12,14 @@ end
 
 function scrapPage(page, context)
    for i, def in page:select("section .definition"):enumerate() do
-      local record = sws.Record:new()
+      local record = sws.Record()
 
       local word = def:select("h1 a.word"):iter()():innerHtml()
       if string.find(word, "\t") then goto continue end
 
       local contributor = def:select(".contributor"):iter()()
       local date = string.match(contributor:innerHtml(), ".*\\?</a>%s*(.*)\\?")
+      date = sws.Date(date, "%B %d, %Y"):format("%Y-%m-%d")
 
       local meaning = def:select(".meaning"):iter()()
       meaning = meaning:innerText():gsub("[\n\r]+", " "):gsub("\t+", "")

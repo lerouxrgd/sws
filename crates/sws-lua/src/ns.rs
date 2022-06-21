@@ -41,11 +41,16 @@ pub mod sws {
         pub const ATTRS: &str = "attrs"; // Function
     }
 
-    pub const RECORD: &str = "Record"; // Table
+    pub const RECORD: &str = "Record"; // Function
     pub mod record {
         //! The `Record` class
-        pub const NEW: &str = "new"; // Function
         pub const PUSH_FIELD: &str = "pushField"; // Function
+    }
+
+    pub const DATE: &str = "Date"; // Function
+    pub mod date {
+        //! The `Date` class
+        pub const FORMAT: &str = "format"; // Function
     }
 
     pub mod page_location {

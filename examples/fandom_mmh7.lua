@@ -54,7 +54,7 @@ function scrapCreature(page, ctx)
       end
    end
 
-   local rec = sws.Record:new()
+   local rec = sws.Record()
    rec:pushField(row["Faction"])
    rec:pushField(creature)
    rec:pushField(row["Tier/level"])
