@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::{fs, thread};
 
-use crossbeam_channel::{bounded, select, unbounded, Sender};
+use crossbeam_channel::{bounded, select, unbounded, Receiver, Sender};
 use mlua::{Function, Lua, LuaSerdeExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,8 @@ use crate::interop::{LuaDate, LuaHtml, LuaStringRecord, LuaSwsContext, SwsContex
 use crate::ns::{globals, sws};
 use crate::writer;
 
-static TX_CSV_WRITER: OnceCell<(Sender<csv::StringRecord>, Sender<()>)> = OnceCell::new();
+static TX_CSV_WRITER: OnceCell<(Sender<csv::StringRecord>, Sender<()>, Receiver<()>)> =
+    OnceCell::new();
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LuaScraperConfig {
@@ -114,9 +115,10 @@ impl Scrapable for LuaScraper {
 
         // Setup csv writer
 
-        let (tx_record, _) = TX_CSV_WRITER.get_or_try_init::<_, anyhow::Error>(move || {
+        let (tx_record, _, _) = TX_CSV_WRITER.get_or_try_init::<_, anyhow::Error>(move || {
             let (tx_record, rx_record) = unbounded::<csv::StringRecord>();
             let (tx_stop, rx_stop) = bounded::<()>(1);
+            let (tx_done, rx_done) = bounded::<()>(1);
 
             let mut wtr = match &config.csv_file {
                 Some(path) => {
@@ -139,6 +141,7 @@ impl Scrapable for LuaScraper {
                 select! {
                     recv(rx_stop) -> _ => {
                         wtr.flush().ok();
+                        tx_done.send(()).ok();
                         break;
                     },
                     recv(rx_record) -> msg => {
@@ -151,7 +154,7 @@ impl Scrapable for LuaScraper {
                 }
             });
 
-            Ok((tx_record, tx_stop))
+            Ok((tx_record, tx_stop, rx_done))
         })?;
 
         // Setup context
@@ -166,7 +169,10 @@ impl Scrapable for LuaScraper {
     }
 
     fn finalizer(&mut self) {
-        TX_CSV_WRITER.get().map(|(_, tx_stop)| tx_stop.send(()));
+        TX_CSV_WRITER.get().map(|(_, tx_stop, rx_done)| {
+            tx_stop.send(()).ok();
+            rx_done.recv().ok()
+        });
     }
 
     fn seed(&self) -> Seed {

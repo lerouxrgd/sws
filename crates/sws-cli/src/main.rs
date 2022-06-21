@@ -191,9 +191,8 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
         (None, Some(pattern)) => {
             let num_workers = args.num_workers.unwrap_or(cmp::max(1, num_cpus::get()));
             let on_error = args.on_error.unwrap_or(OnError::Fail);
-            let mut scraper = LuaScraper::new(&config)?;
             let res = scrap_glob(&config, &pattern, on_error, num_workers);
-            scraper.finalizer();
+            LuaScraper::new(&config)?.finalizer();
             res?;
         }
         _ => anyhow::bail!("Invalid arguments"),
