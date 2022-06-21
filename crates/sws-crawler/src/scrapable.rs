@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use anyhow::{anyhow, bail};
 use sxd_document::dom;
 use tokio::sync::mpsc;
 
@@ -36,19 +37,23 @@ pub enum Sitemap {
     Urlset,
 }
 
-impl<'a> From<dom::Root<'a>> for Sitemap {
-    fn from(root: dom::Root<'a>) -> Self {
+impl<'a> TryFrom<dom::Root<'a>> for Sitemap {
+    type Error = anyhow::Error;
+
+    fn try_from(root: dom::Root<'a>) -> Result<Self, Self::Error> {
         let kind = root.children()[0]
             .element()
-            .expect("First child of root is not an element")
+            .ok_or_else(|| anyhow!("First child of root is not an element"))?
             .name()
             .local_part();
 
-        match kind {
+        let sm = match kind {
             "sitemapindex" => Self::Index,
             "urlset" => Self::Urlset,
-            _ => panic!("Unknown root node kind: {}", kind),
-        }
+            _ => bail!("Unknown root node kind: {}", kind),
+        };
+
+        Ok(sm)
     }
 }
 

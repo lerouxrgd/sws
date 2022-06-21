@@ -55,7 +55,7 @@ where
         };
         let document = package.as_document();
 
-        let sm_kind = Sitemap::from(document.root());
+        let sm_kind = Sitemap::try_from(document.root())?;
 
         let mut context = sxd_xpath::Context::new();
         context.set_namespace("sm", "http://www.sitemaps.org/schemas/sitemap/0.9");
