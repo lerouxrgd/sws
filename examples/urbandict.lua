@@ -11,9 +11,7 @@ function acceptUrl(sitemap, url)
 end
 
 function scrapPage(page, context)
-   for i, def in page:select("section .definition"):enumerate() do
-      local record = sws.Record()
-
+   for defIndex, def in page:select("section .definition"):enumerate() do
       local word = def:select("h1 a.word"):iter()():innerHtml()
       if string.find(word, "\t") then goto continue end
 
@@ -28,12 +26,12 @@ function scrapPage(page, context)
       example = example:innerText():gsub("[\n\r]+", " "):gsub("\t+", "")
 
       if word and date and meaning and example then
+         local record = sws.Record()
          record:pushField(word)
-         record:pushField(tostring(i))
+         record:pushField(defIndex)
          record:pushField(date)
          record:pushField(meaning)
          record:pushField(example)
-
          context:sendRecord(record)
       end
 

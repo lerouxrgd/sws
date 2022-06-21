@@ -1,7 +1,7 @@
 //! [SlotMap](https://crates.io/crates/slotmap)-backed ID-tree.
 //!
 //! Port of [ego-tree](https://crates.io/crates/ego-tree), but using [`Rc`](std::rc::Rc)
-//! instead for references with lifetimes, and without using `unsafe`.
+//! instead of references with lifetimes, and without using `unsafe`.
 
 #![allow(clippy::option_map_unit_fn)]
 
