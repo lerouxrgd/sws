@@ -2,7 +2,7 @@ sws.seedSitemaps = {
    "https://www.urbandictionary.com/sitemap-https.xml.gz"
 }
 
-function acceptUrl(sitemap, url)
+function acceptUrl(url, sitemap)
    if sitemap == sws.Sitemap.URL_SET then
       return string.find(url, "term=")
    else

@@ -278,6 +278,8 @@ where
 
     // Crawler
 
+    let crawler_done = Arc::new(AtomicBool::new(false));
+    let crawler_done_c = crawler_done.clone();
     let scraper = <T as Scrapable>::new(&scraper_conf)?;
     let seed = scraper.seed();
     let crawler: Pin<Box<dyn Future<Output = Result<()>>>> = match seed {
@@ -285,6 +287,7 @@ where
             for sm_url in urls {
                 gather_urls(crawler_conf, &scraper, &sm_url, tx_url.clone()).await?;
             }
+            crawler_done_c.store(true, Ordering::SeqCst);
             drop(tx_url);
             Ok(())
         }),
@@ -292,6 +295,7 @@ where
             urls.into_iter().for_each(|page_url| {
                 tx_url.send(page_url);
             });
+            crawler_done_c.store(true, Ordering::SeqCst);
             drop(tx_url);
             Box::pin(async move { Ok(()) })
         }
@@ -304,7 +308,9 @@ where
             match timeout(Duration::from_secs(1), tokio::signal::ctrl_c()).await {
                 Ok(_) => return Err::<(), _>(anyhow!("Interrupted")),
                 Err(_) => {
-                    if pages_out.load(Ordering::SeqCst) == pages_in.load(Ordering::SeqCst) {
+                    if pages_out.load(Ordering::SeqCst) == pages_in.load(Ordering::SeqCst)
+                        && crawler_done.load(Ordering::SeqCst)
+                    {
                         for _ in 0..crawler_conf.num_workers {
                             tx_stop.send(()).ok();
                         }

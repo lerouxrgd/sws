@@ -47,7 +47,7 @@ impl Scrapable for LuaScraper {
             .get::<_, Option<Function>>(globals::ACCEPT_URL)?
             .is_none()
         {
-            let accept_url = lua.create_function(|_, (_sm, _url): (String, String)| Ok(true))?;
+            let accept_url = lua.create_function(|_, (_url, _sm): (String, String)| Ok(true))?;
             globals.set(globals::ACCEPT_URL, accept_url)?;
         }
 
@@ -206,7 +206,7 @@ impl Scrapable for LuaScraper {
             .get(globals::ACCEPT_URL)
             .expect(&format!("Function {} not found", globals::ACCEPT_URL)); // Ensured in constructor
 
-        match accept_url.call::<_, bool>((sm, url.to_string())) {
+        match accept_url.call::<_, bool>((url.to_string(), sm)) {
             Ok(accepted) => accepted,
             Err(e) => {
                 log::error!(
