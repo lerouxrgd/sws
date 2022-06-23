@@ -1,4 +1,5 @@
 use std::cmp;
+use std::num::NonZeroUsize;
 
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +12,8 @@ pub struct CrawlerConfig {
     #[serde(default = "default_page_buffer")]
     pub page_buffer: usize,
 
-    #[serde(default = "default_concurrent_downloads")]
-    pub concurrent_downloads: usize,
+    #[serde(default = "default_throttle")]
+    pub throttle: Throttle,
 
     #[serde(default = "default_num_workers")]
     pub num_workers: usize,
@@ -32,7 +33,7 @@ impl Default for CrawlerConfig {
         Self {
             user_agent: String::from("SWSbot"),
             page_buffer: 10_000,
-            concurrent_downloads: 100,
+            throttle: Throttle::Concurrent(100.try_into().unwrap()),
             num_workers: cmp::max(1, num_cpus::get().saturating_sub(2)),
             on_dl_error: OnError::SkipAndLog,
             on_xml_error: OnError::SkipAndLog,
@@ -49,8 +50,8 @@ fn default_page_buffer() -> usize {
     CrawlerConfig::default().page_buffer
 }
 
-fn default_concurrent_downloads() -> usize {
-    CrawlerConfig::default().concurrent_downloads
+fn default_throttle() -> Throttle {
+    CrawlerConfig::default().throttle
 }
 
 fn default_num_workers() -> usize {
@@ -74,4 +75,10 @@ fn default_on_scrap_error() -> OnError {
 pub enum OnError {
     Fail,
     SkipAndLog,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum Throttle {
+    Concurrent(NonZeroUsize),
+    PerSecond(NonZeroUsize),
 }

@@ -3,7 +3,7 @@ use std::{cmp, env, io};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
-use sws_crawler::{crawl_site, CrawlerConfig, OnError, PageLocation, Scrapable};
+use sws_crawler::{crawl_site, CrawlerConfig, OnError, PageLocation, Scrapable, Throttle};
 use sws_lua::{scrap_glob, scrap_page, writer::FileMode, LuaScraper, LuaScraperConfig};
 use tokio::runtime;
 
@@ -28,6 +28,7 @@ pub enum SubCommand {
 /// Crawl sitemaps and scrap pages content
 #[derive(Debug, clap::Args)]
 #[clap(group = clap::ArgGroup::new("mode").requires_all(&["output-file"]))]
+#[clap(group = clap::ArgGroup::new("throttle"))]
 pub struct CrawlArgs {
     /// Path to the Lua script that defines scraping logic
     #[clap(display_order(1), parse(from_os_str), long, short)]
@@ -54,8 +55,12 @@ pub struct CrawlArgs {
     pub page_buffer: Option<usize>,
 
     /// Override crawler's maximum concurrent downloads for pages
-    #[clap(display_order(7), long = "conc-dl")]
+    #[clap(display_order(7), group = "throttle", long = "conc-dl")]
     pub concurrent_downloads: Option<usize>,
+
+    /// Override crawler's maximum concurrent downloads for pages
+    #[clap(display_order(7), group = "throttle", long = "rps")]
+    pub requests_per_second: Option<usize>,
 
     /// Override crawler's number of CPU workers used to scrap pages
     #[clap(display_order(8), long)]
@@ -100,8 +105,11 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
     if let Some(page_buffer) = args.page_buffer {
         crawler_conf.page_buffer = page_buffer;
     }
-    if let Some(concurrent_downloads) = args.concurrent_downloads {
-        crawler_conf.concurrent_downloads = concurrent_downloads;
+    if let Some(conc_dl) = args.concurrent_downloads {
+        crawler_conf.throttle = Throttle::Concurrent(conc_dl.try_into()?);
+    }
+    if let Some(rps) = args.requests_per_second {
+        crawler_conf.throttle = Throttle::PerSecond(rps.try_into()?);
     }
     if let Some(num_workers) = args.num_workers {
         crawler_conf.num_workers = num_workers;
@@ -189,10 +197,13 @@ pub fn scrap(args: ScrapArgs) -> anyhow::Result<()> {
             scrap_page(&config, page, PageLocation::Url(url))?
         }
         (None, Some(pattern)) => {
-            let num_workers = args.num_workers.unwrap_or(cmp::max(1, num_cpus::get()));
+            let num_workers = args
+                .num_workers
+                .unwrap_or_else(|| cmp::max(1, num_cpus::get()));
             let on_error = args.on_error.unwrap_or(OnError::Fail);
+            let mut scraper = LuaScraper::new(&config)?;
             let res = scrap_glob(&config, &pattern, on_error, num_workers);
-            LuaScraper::new(&config)?.finalizer();
+            scraper.finalizer();
             res?;
         }
         _ => anyhow::bail!("Invalid arguments"),

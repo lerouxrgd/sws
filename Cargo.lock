@@ -1563,6 +1563,7 @@ dependencies = [
  "lazy_static",
  "log",
  "num_cpus",
+ "pin-project-lite",
  "reqwest",
  "serde",
  "sxd-document",
