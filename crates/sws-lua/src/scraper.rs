@@ -55,7 +55,7 @@ impl Scrapable for LuaScraper {
 
         let sws = globals.get::<_, mlua::Table>(globals::SWS)?;
 
-        let new_record = lua.create_function(|_, ()| Ok(LuaStringRecord::new()))?;
+        let new_record = lua.create_function(|_, ()| Ok(LuaStringRecord::default()))?;
         sws.set(sws::RECORD, new_record)?;
 
         let new_date =
@@ -184,14 +184,14 @@ impl Scrapable for LuaScraper {
             .lua
             .globals()
             .get(globals::SCRAP_PAGE)
-            .expect(&format!("Function {} not found", globals::SCRAP_PAGE)); // Ensured in constructor
+            .unwrap_or_else(|_| panic!("Function {} not found", globals::SCRAP_PAGE)); // Ensured in constructor
 
         let page = LuaHtml(Html::parse_document(&page));
         self.context.borrow_mut().page_location = Rc::downgrade(&location);
 
-        Ok(scrap_page
+        scrap_page
             .call::<_, ()>((page, self.context.clone()))
-            .map_err(|e| anyhow::anyhow!(e.to_string().replace('\n', "")))?)
+            .map_err(|e| anyhow::anyhow!(e.to_string().replace('\n', "")))
     }
 
     fn accept(&self, sm: Sitemap, url: &str) -> bool {
@@ -204,7 +204,7 @@ impl Scrapable for LuaScraper {
             .lua
             .globals()
             .get(globals::ACCEPT_URL)
-            .expect(&format!("Function {} not found", globals::ACCEPT_URL)); // Ensured in constructor
+            .unwrap_or_else(|_| panic!("Function {} not found", globals::ACCEPT_URL)); // Ensured in constructor
 
         match accept_url.call::<_, bool>((url.to_string(), sm)) {
             Ok(accepted) => accepted,
@@ -294,7 +294,7 @@ pub fn scrap_page(
     page: String,
     location: PageLocation,
 ) -> anyhow::Result<()> {
-    let mut scraper = LuaScraper::new(&config)?;
+    let mut scraper = LuaScraper::new(config)?;
     scraper.scrap(page, Rc::new(location))?;
     scraper.finalizer();
     Ok(())

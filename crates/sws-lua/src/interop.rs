@@ -174,21 +174,15 @@ impl UserData for LuaPageLocation {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct LuaStringRecord(pub(crate) csv::StringRecord);
-
-impl LuaStringRecord {
-    pub fn new() -> Self {
-        Self(csv::StringRecord::new())
-    }
-}
-
 impl UserData for LuaStringRecord {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, r, ()| Ok(format!("{:?}", r.0)));
 
         methods.add_method_mut(sws::record::PUSH_FIELD, |_, record, field: String| {
-            Ok(record.0.push_field(&field))
+            record.0.push_field(&field);
+            Ok(())
         });
     }
 }

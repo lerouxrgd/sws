@@ -17,7 +17,8 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::config::{CrawlerConfig, OnError};
+use crate::config::{CrawlerConfig, OnError, Throttle};
+use crate::limiter::{RateLimitedExt, RateLimiter};
 use crate::scrapable::{CountedTx, PageLocation, Scrapable, Seed, Sitemap};
 
 lazy_static! {
@@ -34,6 +35,7 @@ fn gather_urls<'a, T>(
     scraper: &'a T,
     sitemap_url: &'a str,
     tx_url: CountedTx,
+    limiter: RateLimiter,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>>
 where
     T: Scrapable,
@@ -80,17 +82,21 @@ where
         if let sxd_xpath::Value::Nodeset(nodes) = value {
             match sm_kind {
                 Sitemap::Index => {
+                    let limiter_c = limiter.clone();
                     let urls = nodes
                         .iter()
                         .map(|node| node.string_value())
-                        .filter(|sm_url| scraper.accept(sm_kind, &sm_url))
-                        .map(|url| (url, tx_url.clone()));
+                        .filter(|sm_url| scraper.accept(sm_kind, sm_url))
+                        .map(|url| (url, tx_url.clone(), limiter.clone()));
 
-                    let stream = stream::iter(urls)
-                        .map(|(sm_url, tx_url)| async move {
-                            gather_urls(config, scraper, &sm_url, tx_url).await
-                        })
-                        .buffer_unordered(config.concurrent_downloads);
+                    let stream = stream::iter(urls).map(|(sm_url, tx_url, limiter)| async move {
+                        gather_urls(config, scraper, &sm_url, tx_url, limiter).await
+                    });
+
+                    let stream = match config.throttle {
+                        Throttle::Concurrent(n) => stream.buffer_unordered(n.get()).boxed_local(),
+                        Throttle::PerSecond(_) => stream.rate_limited(limiter_c).boxed_local(),
+                    };
 
                     match config.on_dl_error {
                         OnError::Fail => {
@@ -182,6 +188,12 @@ where
 
     let tx_url = CountedTx::new(tx_url, pages_in.clone());
 
+    let per_second = match crawler_conf.throttle {
+        Throttle::PerSecond(n) => n.get(),
+        _ => 0,
+    };
+    let limiter = RateLimiter::new(per_second);
+
     // Workers
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -240,6 +252,7 @@ where
 
     // Downloader
 
+    let limiter_c = limiter.clone();
     let pages_in_c = pages_in.clone();
     let downloader = async move {
         let stream = UnboundedReceiverStream::new(rx_url)
@@ -249,8 +262,12 @@ where
                     pages_in.fetch_sub(1, Ordering::SeqCst);
                     e
                 })
-            })
-            .buffer_unordered(crawler_conf.concurrent_downloads);
+            });
+
+        let stream = match crawler_conf.throttle {
+            Throttle::Concurrent(n) => stream.buffer_unordered(n.get()).boxed(),
+            Throttle::PerSecond(_) => stream.rate_limited(limiter_c).boxed(),
+        };
 
         match crawler_conf.on_dl_error {
             OnError::Fail => {
@@ -280,12 +297,19 @@ where
 
     let crawler_done = Arc::new(AtomicBool::new(false));
     let crawler_done_c = crawler_done.clone();
-    let scraper = <T as Scrapable>::new(&scraper_conf)?;
+    let scraper = <T as Scrapable>::new(scraper_conf)?;
     let seed = scraper.seed();
     let crawler: Pin<Box<dyn Future<Output = Result<()>>>> = match seed {
         Seed::Sitemaps(urls) => Box::pin(async move {
             for sm_url in urls {
-                gather_urls(crawler_conf, &scraper, &sm_url, tx_url.clone()).await?;
+                gather_urls(
+                    crawler_conf,
+                    &scraper,
+                    &sm_url,
+                    tx_url.clone(),
+                    limiter.clone(),
+                )
+                .await?;
             }
             crawler_done_c.store(true, Ordering::SeqCst);
             drop(tx_url);
@@ -306,7 +330,7 @@ where
     let done = Box::pin(async move {
         loop {
             match timeout(Duration::from_secs(1), tokio::signal::ctrl_c()).await {
-                Ok(_) => return Err::<(), _>(anyhow!("Interrupted")),
+                Ok(_) => return Err(anyhow!("Interrupted")),
                 Err(_) => {
                     if pages_out.load(Ordering::SeqCst) == pages_in.load(Ordering::SeqCst)
                         && crawler_done.load(Ordering::SeqCst)
@@ -314,15 +338,16 @@ where
                         for _ in 0..crawler_conf.num_workers {
                             tx_stop.send(()).ok();
                         }
-                        return Ok::<_, Error>(());
+                        return Ok(());
                     }
                 }
             }
         }
     });
 
+    let mut scraper = <T as Scrapable>::new(scraper_conf)?;
     let res = try_join!(workers, downloader, crawler, done);
-    <T as Scrapable>::new(&scraper_conf)?.finalizer();
+    scraper.finalizer();
     res?;
 
     Ok(())
