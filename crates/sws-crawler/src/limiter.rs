@@ -16,7 +16,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-    pub fn new(per_second: usize) -> Self {
+    pub fn with_limit(per_second: usize) -> Self {
         let permits = Arc::new(Semaphore::new(0));
 
         let permits_c = permits.clone();
@@ -27,6 +27,27 @@ impl RateLimiter {
                     Err(_) => {
                         let available = permits_c.available_permits();
                         permits_c.add_permits(per_second - available);
+                    }
+                }
+            }
+        });
+
+        Self { permits }
+    }
+
+    pub fn with_delay(delay: f32) -> Self {
+        let permits = Arc::new(Semaphore::new(0));
+
+        let permits_c = permits.clone();
+        tokio::spawn(async move {
+            loop {
+                match timeout(Duration::from_secs_f32(delay), future::pending::<()>()).await {
+                    Ok(_) => unreachable!(),
+                    Err(_) => {
+                        let available = permits_c.available_permits();
+                        if available == 0 {
+                            permits_c.add_permits(1);
+                        }
                     }
                 }
             }

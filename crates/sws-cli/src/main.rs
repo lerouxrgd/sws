@@ -58,28 +58,32 @@ pub struct CrawlArgs {
     #[clap(display_order(7), group = "throttle", long = "conc-dl")]
     pub concurrent_downloads: Option<usize>,
 
-    /// Override crawler's maximum concurrent downloads for pages
-    #[clap(display_order(7), group = "throttle", long = "rps")]
+    /// Override crawler's number of requests per second
+    #[clap(display_order(8), group = "throttle", long = "rps")]
     pub requests_per_second: Option<usize>,
 
+    /// Override crawler's delay between requests
+    #[clap(display_order(9), group = "throttle", long = "delay")]
+    pub requests_delay: Option<f32>,
+
     /// Override crawler's number of CPU workers used to scrap pages
-    #[clap(display_order(8), long)]
+    #[clap(display_order(10), long)]
     pub num_workers: Option<usize>,
 
     /// Override crawler's download error handling strategy
-    #[clap(display_order(9), arg_enum, long)]
+    #[clap(display_order(11), arg_enum, long)]
     pub on_dl_error: Option<OnError>,
 
     /// Override crawler's xml error handling strategy
-    #[clap(display_order(10), arg_enum, long)]
+    #[clap(display_order(12), arg_enum, long)]
     pub on_xml_error: Option<OnError>,
 
     /// Override crawler's scrap error handling strategy
-    #[clap(display_order(11), arg_enum, long)]
+    #[clap(display_order(13), arg_enum, long)]
     pub on_scrap_error: Option<OnError>,
 
     /// Don't output logs
-    #[clap(display_order(12), long, short)]
+    #[clap(display_order(14), long, short)]
     pub quiet: bool,
 }
 
@@ -106,10 +110,14 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
         crawler_conf.page_buffer = page_buffer;
     }
     if let Some(conc_dl) = args.concurrent_downloads {
-        crawler_conf.throttle = Throttle::Concurrent(conc_dl.try_into()?);
+        crawler_conf.throttle = Some(Throttle::Concurrent(conc_dl.try_into()?));
     }
     if let Some(rps) = args.requests_per_second {
-        crawler_conf.throttle = Throttle::PerSecond(rps.try_into()?);
+        crawler_conf.throttle = Some(Throttle::PerSecond(rps.try_into()?));
+    }
+    if let Some(delay) = args.requests_delay {
+        anyhow::ensure!(delay > 0.0, "delay must be > 0.0");
+        crawler_conf.throttle = Some(Throttle::Delay(delay));
     }
     if let Some(num_workers) = args.num_workers {
         crawler_conf.num_workers = num_workers;

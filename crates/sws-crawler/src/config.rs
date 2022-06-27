@@ -13,7 +13,7 @@ pub struct CrawlerConfig {
     pub page_buffer: usize,
 
     #[serde(default = "default_throttle")]
-    pub throttle: Throttle,
+    pub throttle: Option<Throttle>,
 
     #[serde(default = "default_num_workers")]
     pub num_workers: usize,
@@ -33,7 +33,7 @@ impl Default for CrawlerConfig {
         Self {
             user_agent: String::from("SWSbot"),
             page_buffer: 10_000,
-            throttle: Throttle::Concurrent(100.try_into().unwrap()),
+            throttle: None,
             num_workers: cmp::max(1, num_cpus::get().saturating_sub(2)),
             on_dl_error: OnError::SkipAndLog,
             on_xml_error: OnError::SkipAndLog,
@@ -50,7 +50,7 @@ fn default_page_buffer() -> usize {
     CrawlerConfig::default().page_buffer
 }
 
-fn default_throttle() -> Throttle {
+fn default_throttle() -> Option<Throttle> {
     CrawlerConfig::default().throttle
 }
 
@@ -79,6 +79,16 @@ pub enum OnError {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Throttle {
+    /// The maximum number of concurrent requests
     Concurrent(NonZeroUsize),
+    /// The number of requests per second
     PerSecond(NonZeroUsize),
+    /// The delay in seconds between requests
+    Delay(f32),
+}
+
+impl Default for Throttle {
+    fn default() -> Self {
+        Self::Concurrent(100.try_into().unwrap())
+    }
 }

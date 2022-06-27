@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error, Result};
 use flate2::read::GzDecoder;
-use futures::{future, stream, try_join, StreamExt};
+use futures::{future, stream, try_join, Stream, StreamExt};
 use lazy_static::lazy_static;
 use reqwest::header::{CONTENT_TYPE, USER_AGENT};
 use sxd_document::parser;
@@ -35,7 +35,7 @@ fn gather_urls<'a, T>(
     scraper: &'a T,
     sitemap_url: &'a str,
     tx_url: CountedTx,
-    limiter: RateLimiter,
+    throttler: Throttler,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>>
 where
     T: Scrapable,
@@ -82,21 +82,16 @@ where
         if let sxd_xpath::Value::Nodeset(nodes) = value {
             match sm_kind {
                 Sitemap::Index => {
-                    let limiter_c = limiter.clone();
                     let urls = nodes
                         .iter()
                         .map(|node| node.string_value())
                         .filter(|sm_url| scraper.accept(sm_kind, sm_url))
-                        .map(|url| (url, tx_url.clone(), limiter.clone()));
+                        .map(|url| (url, tx_url.clone(), throttler.clone()));
 
                     let stream = stream::iter(urls).map(|(sm_url, tx_url, limiter)| async move {
                         gather_urls(config, scraper, &sm_url, tx_url, limiter).await
                     });
-
-                    let stream = match config.throttle {
-                        Throttle::Concurrent(n) => stream.buffer_unordered(n.get()).boxed_local(),
-                        Throttle::PerSecond(_) => stream.rate_limited(limiter_c).boxed_local(),
-                    };
+                    let stream = throttler.throttle(stream);
 
                     match config.on_dl_error {
                         OnError::Fail => {
@@ -133,6 +128,43 @@ where
 struct Page {
     page: String,
     location: PageLocation,
+}
+
+#[derive(Debug, Clone)]
+struct Throttler {
+    throttle: Throttle,
+    limiter: Option<RateLimiter>,
+}
+
+impl Throttler {
+    pub fn new(throttle: Throttle) -> Self {
+        let limiter = match throttle {
+            Throttle::Concurrent(_) => None,
+            Throttle::PerSecond(n) => Some(RateLimiter::with_limit(n.get())),
+            Throttle::Delay(delay) => Some(RateLimiter::with_delay(delay)),
+        };
+        Self { throttle, limiter }
+    }
+
+    pub fn throttle<'a, S, F, T>(
+        &self,
+        stream: S,
+    ) -> Pin<Box<dyn Stream<Item = Result<T, anyhow::Error>> + 'a>>
+    where
+        S: Stream<Item = F> + 'a,
+        F: Future<Output = Result<T, anyhow::Error>>,
+    {
+        match (self.throttle, &self.limiter) {
+            (Throttle::Concurrent(n), _) => stream.buffer_unordered(n.get()).boxed_local(),
+            (Throttle::PerSecond(_), Some(limiter)) => {
+                stream.rate_limited(limiter.clone()).boxed_local()
+            }
+            (Throttle::Delay(_), Some(limiter)) => {
+                stream.rate_limited(limiter.clone()).boxed_local()
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 async fn download(config: &CrawlerConfig, url: &str) -> Result<Page> {
@@ -187,12 +219,6 @@ where
     let (tx_page, rx_page) = crossbeam_channel::bounded::<Page>(crawler_conf.page_buffer);
 
     let tx_url = CountedTx::new(tx_url, pages_in.clone());
-
-    let per_second = match crawler_conf.throttle {
-        Throttle::PerSecond(n) => n.get(),
-        _ => 0,
-    };
-    let limiter = RateLimiter::new(per_second);
 
     // Workers
 
@@ -250,9 +276,77 @@ where
         .await?
     };
 
+    // Crawler
+
+    let scraper = <T as Scrapable>::new(scraper_conf)?;
+    let seed = scraper.seed();
+
+    let throttle = match &seed {
+        Seed::RobotsTxt(url) => {
+            let robots = HTTP_CLI.get(url).send().await?.bytes().await?;
+            let robots = texting_robots::Robot::new(&crawler_conf.user_agent, &robots)?;
+            match (robots.delay, crawler_conf.throttle) {
+                (_, Some(throttle)) => throttle,
+                (Some(delay), None) => {
+                    anyhow::ensure!(delay > 0.0, "delay must be > 0.0");
+                    Throttle::Delay(delay)
+                }
+                (None, None) => Throttle::default(),
+            }
+        }
+        _ => crawler_conf.throttle.unwrap_or_default(),
+    };
+    let throttler = Throttler::new(throttle);
+    let throttler_c = throttler.clone();
+
+    let crawler_done = Arc::new(AtomicBool::new(false));
+    let crawler_done_c = crawler_done.clone();
+
+    let crawler: Pin<Box<dyn Future<Output = Result<()>>>> = match seed {
+        Seed::Sitemaps(urls) => Box::pin(async move {
+            for sm_url in urls {
+                gather_urls(
+                    crawler_conf,
+                    &scraper,
+                    &sm_url,
+                    tx_url.clone(),
+                    throttler_c.clone(),
+                )
+                .await?;
+            }
+            crawler_done_c.store(true, Ordering::SeqCst);
+            drop(tx_url);
+            Ok(())
+        }),
+        Seed::RobotsTxt(url) => Box::pin(async move {
+            let robots = HTTP_CLI.get(url).send().await?.bytes().await?;
+            let robots = texting_robots::Robot::new(&crawler_conf.user_agent, &robots)?;
+            for sm_url in robots.sitemaps {
+                if scraper.accept(Sitemap::Index, &sm_url) {
+                    gather_urls(
+                        crawler_conf,
+                        &scraper,
+                        &sm_url,
+                        tx_url.clone(),
+                        throttler_c.clone(),
+                    )
+                    .await?;
+                }
+            }
+            Ok(())
+        }),
+        Seed::Pages(urls) => {
+            urls.into_iter().for_each(|page_url| {
+                tx_url.send(page_url);
+            });
+            crawler_done_c.store(true, Ordering::SeqCst);
+            drop(tx_url);
+            Box::pin(async move { Ok(()) })
+        }
+    };
+
     // Downloader
 
-    let limiter_c = limiter.clone();
     let pages_in_c = pages_in.clone();
     let downloader = async move {
         let stream = UnboundedReceiverStream::new(rx_url)
@@ -263,11 +357,7 @@ where
                     e
                 })
             });
-
-        let stream = match crawler_conf.throttle {
-            Throttle::Concurrent(n) => stream.buffer_unordered(n.get()).boxed(),
-            Throttle::PerSecond(_) => stream.rate_limited(limiter_c).boxed(),
-        };
+        let stream = throttler.throttle(stream);
 
         match crawler_conf.on_dl_error {
             OnError::Fail => {
@@ -290,38 +380,6 @@ where
 
                 Ok(())
             }
-        }
-    };
-
-    // Crawler
-
-    let crawler_done = Arc::new(AtomicBool::new(false));
-    let crawler_done_c = crawler_done.clone();
-    let scraper = <T as Scrapable>::new(scraper_conf)?;
-    let seed = scraper.seed();
-    let crawler: Pin<Box<dyn Future<Output = Result<()>>>> = match seed {
-        Seed::Sitemaps(urls) => Box::pin(async move {
-            for sm_url in urls {
-                gather_urls(
-                    crawler_conf,
-                    &scraper,
-                    &sm_url,
-                    tx_url.clone(),
-                    limiter.clone(),
-                )
-                .await?;
-            }
-            crawler_done_c.store(true, Ordering::SeqCst);
-            drop(tx_url);
-            Ok(())
-        }),
-        Seed::Pages(urls) => {
-            urls.into_iter().for_each(|page_url| {
-                tx_url.send(page_url);
-            });
-            crawler_done_c.store(true, Ordering::SeqCst);
-            drop(tx_url);
-            Box::pin(async move { Ok(()) })
         }
     };
 

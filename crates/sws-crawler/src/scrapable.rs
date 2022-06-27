@@ -29,7 +29,10 @@ pub trait Scrapable {
 pub enum Seed {
     Sitemaps(Vec<String>),
     Pages(Vec<String>),
+    RobotsTxt(String),
 }
+
+// TODO: consider a clonable CrawlingContext w/ Sitemap, optional Robots,
 
 #[derive(Debug, Clone, Copy)]
 pub enum Sitemap {
