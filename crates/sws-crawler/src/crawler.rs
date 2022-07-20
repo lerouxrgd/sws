@@ -13,13 +13,14 @@ use futures::{future, stream, try_join, Stream, StreamExt};
 use lazy_static::lazy_static;
 use reqwest::header::{CONTENT_TYPE, USER_AGENT};
 use sxd_document::parser;
+use texting_robots::Robot;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::config::{CrawlerConfig, OnError, Throttle};
 use crate::limiter::{RateLimitedExt, RateLimiter};
-use crate::scrapable::{CountedTx, PageLocation, Scrapable, Seed, Sitemap};
+use crate::scrapable::{CountedTx, CrawlingContext, PageLocation, Scrapable, Seed, Sitemap};
 
 lazy_static! {
     static ref HTTP_CLI: reqwest::Client = reqwest::ClientBuilder::new()
@@ -36,6 +37,7 @@ fn gather_urls<'a, T>(
     sitemap_url: &'a str,
     tx_url: CountedTx,
     throttler: Throttler,
+    robot: Option<Arc<Robot>>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>>
 where
     T: Scrapable,
@@ -85,12 +87,16 @@ where
                     let urls = nodes
                         .iter()
                         .map(|node| node.string_value())
-                        .filter(|sm_url| scraper.accept(sm_kind, sm_url))
-                        .map(|url| (url, tx_url.clone(), throttler.clone()));
+                        .filter(|sm_url| {
+                            let ctx = CrawlingContext::new(sm_kind, robot.clone());
+                            scraper.accept(sm_url, ctx)
+                        })
+                        .map(|url| (url, tx_url.clone(), throttler.clone(), robot.clone()));
 
-                    let stream = stream::iter(urls).map(|(sm_url, tx_url, limiter)| async move {
-                        gather_urls(config, scraper, &sm_url, tx_url, limiter).await
-                    });
+                    let stream =
+                        stream::iter(urls).map(|(sm_url, tx_url, limiter, robot)| async move {
+                            gather_urls(config, scraper, &sm_url, tx_url, limiter, robot).await
+                        });
                     let stream = throttler.throttle(stream);
 
                     match config.on_dl_error {
@@ -112,7 +118,8 @@ where
                 Sitemap::Urlset => {
                     for node in nodes {
                         let page_url = node.string_value();
-                        if scraper.accept(sm_kind, &page_url) {
+                        let ctx = CrawlingContext::new(sm_kind, robot.clone());
+                        if scraper.accept(&page_url, ctx) {
                             tx_url.send(page_url);
                         }
                     }
@@ -211,35 +218,65 @@ pub async fn crawl_site<T>(
 where
     T: Scrapable,
 {
-    let pages_in = Arc::new(AtomicUsize::new(0));
-    let pages_out = Arc::new(AtomicUsize::new(0));
+    // Initialize shared components
+
+    let scraper = <T as Scrapable>::new(scraper_conf)?;
+    let seed = scraper.seed();
+
+    let mut robot = None;
+
+    let throttle = match &seed {
+        Seed::RobotsTxt(url) => {
+            let r = HTTP_CLI.get(url).send().await?.bytes().await?;
+            let r = Robot::new(&crawler_conf.user_agent, &r)?;
+            let throttle = match (r.delay, crawler_conf.throttle) {
+                (_, Some(throttle)) => throttle,
+                (Some(delay), None) => {
+                    anyhow::ensure!(delay > 0.0, "delay must be > 0.0");
+                    Throttle::Delay(delay)
+                }
+                (None, None) => Throttle::default(),
+            };
+            robot = Some(Arc::new(r));
+            throttle
+        }
+        _ => crawler_conf.throttle.unwrap_or_default(),
+    };
+    let throttler = Throttler::new(throttle);
+
+    // Setup workers task
 
     let (tx_stop, rx_stop) = crossbeam_channel::unbounded::<()>();
     let (tx_url, rx_url) = mpsc::unbounded_channel::<String>();
     let (tx_page, rx_page) = crossbeam_channel::bounded::<Page>(crawler_conf.page_buffer);
 
+    let failed = Arc::new(AtomicBool::new(false));
+    let pages_in = Arc::new(AtomicUsize::new(0));
+    let pages_out = Arc::new(AtomicUsize::new(0));
+
     let tx_url = CountedTx::new(tx_url, pages_in.clone());
 
-    // Workers
-
-    let stop = Arc::new(AtomicBool::new(false));
     let mut workers = vec![];
     for id in 0..crawler_conf.num_workers {
         let rx_stop = rx_stop.clone();
         let rx_page = rx_page.clone();
         let tx_url = tx_url.clone();
+        let robot = robot.clone();
         let pages_out = pages_out.clone();
         let scraper_conf = scraper_conf.clone();
         let crawler_conf = crawler_conf.clone();
-        let stop = stop.clone();
+        let failed = failed.clone();
         let worker = thread::Builder::new()
             .name(format!("{id}"))
             .spawn(move || {
                 let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
-                scraper.init(tx_url);
+                scraper.init(tx_url, robot);
                 loop {
                     crossbeam_channel::select! {
                         recv(rx_page) -> page => {
+                            if failed.load(Ordering::Relaxed) {
+                                break;
+                            }
                             if let Ok(Page { page, location }) = page {
                                 let location = Rc::new(location);
                                 match scraper.scrap(page, location.clone()) {
@@ -249,7 +286,7 @@ where
                                             log::error!("Skipping scrap for page {location:?} got: {e}");
                                         }
                                         OnError::Fail => {
-                                            stop.store(true, Ordering::SeqCst);
+                                            failed.store(true, Ordering::SeqCst);
                                             return Err(e);
                                         }
                                     },
@@ -276,27 +313,8 @@ where
         .await?
     };
 
-    // Crawler
+    // Setup crawler task
 
-    let scraper = <T as Scrapable>::new(scraper_conf)?;
-    let seed = scraper.seed();
-
-    let throttle = match &seed {
-        Seed::RobotsTxt(url) => {
-            let robots = HTTP_CLI.get(url).send().await?.bytes().await?;
-            let robots = texting_robots::Robot::new(&crawler_conf.user_agent, &robots)?;
-            match (robots.delay, crawler_conf.throttle) {
-                (_, Some(throttle)) => throttle,
-                (Some(delay), None) => {
-                    anyhow::ensure!(delay > 0.0, "delay must be > 0.0");
-                    Throttle::Delay(delay)
-                }
-                (None, None) => Throttle::default(),
-            }
-        }
-        _ => crawler_conf.throttle.unwrap_or_default(),
-    };
-    let throttler = Throttler::new(throttle);
     let throttler_c = throttler.clone();
 
     let crawler_done = Arc::new(AtomicBool::new(false));
@@ -311,6 +329,7 @@ where
                     &sm_url,
                     tx_url.clone(),
                     throttler_c.clone(),
+                    robot.clone(),
                 )
                 .await?;
             }
@@ -318,19 +337,21 @@ where
             drop(tx_url);
             Ok(())
         }),
-        Seed::RobotsTxt(url) => Box::pin(async move {
-            let robots = HTTP_CLI.get(url).send().await?.bytes().await?;
-            let robots = texting_robots::Robot::new(&crawler_conf.user_agent, &robots)?;
-            for sm_url in robots.sitemaps {
-                if scraper.accept(Sitemap::Index, &sm_url) {
-                    gather_urls(
-                        crawler_conf,
-                        &scraper,
-                        &sm_url,
-                        tx_url.clone(),
-                        throttler_c.clone(),
-                    )
-                    .await?;
+        Seed::RobotsTxt(_) => Box::pin(async move {
+            if let Some(r) = &robot {
+                let crawling_ctx = CrawlingContext::new(Sitemap::Index, robot.clone());
+                for sm_url in &r.sitemaps {
+                    if scraper.accept(sm_url, crawling_ctx.clone()) {
+                        gather_urls(
+                            crawler_conf,
+                            &scraper,
+                            sm_url,
+                            tx_url.clone(),
+                            throttler_c.clone(),
+                            robot.clone(),
+                        )
+                        .await?;
+                    }
                 }
             }
             Ok(())
@@ -345,9 +366,10 @@ where
         }
     };
 
-    // Downloader
+    // Setup downloader task
 
     let pages_in_c = pages_in.clone();
+
     let downloader = async move {
         let stream = UnboundedReceiverStream::new(rx_url)
             .zip(stream::repeat_with(move || pages_in_c.clone()))

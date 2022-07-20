@@ -16,3 +16,4 @@ once_cell = "1"
 serde = { version = "1", features = ["derive"] }
 sws-crawler = { path = "../sws-crawler" }
 sws-scraper = { path = "../sws-scraper" }
+texting_robots = "0.2"

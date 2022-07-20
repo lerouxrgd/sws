@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail};
 use sxd_document::dom;
+use texting_robots::Robot;
 use tokio::sync::mpsc;
 
 pub trait Scrapable {
@@ -14,11 +15,11 @@ pub trait Scrapable {
     where
         Self: Sized;
 
-    fn init(&mut self, _tx_url: CountedTx) {}
+    fn init(&mut self, _tx_url: CountedTx, _robot: Option<Arc<Robot>>) {}
 
     fn seed(&self) -> Seed;
 
-    fn accept(&self, sm: Sitemap, url: &str) -> bool;
+    fn accept(&self, url: &str, crawling_ctx: CrawlingContext) -> bool;
 
     fn scrap(&mut self, page: String, location: Rc<PageLocation>) -> anyhow::Result<()>;
 
@@ -32,7 +33,25 @@ pub enum Seed {
     RobotsTxt(String),
 }
 
-// TODO: consider a clonable CrawlingContext w/ Sitemap, optional Robots,
+#[derive(Debug, Clone)]
+pub struct CrawlingContext {
+    sitemap: Sitemap,
+    robot: Option<Arc<Robot>>,
+}
+
+impl CrawlingContext {
+    pub(crate) fn new(sm: Sitemap, robot: Option<Arc<Robot>>) -> Self {
+        Self { sitemap: sm, robot }
+    }
+
+    pub fn sitemap(&self) -> Sitemap {
+        self.sitemap
+    }
+
+    pub fn robot(&self) -> Option<Arc<Robot>> {
+        self.robot.clone()
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Sitemap {

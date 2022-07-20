@@ -1,15 +1,21 @@
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::{fs, thread};
 
 use crossbeam_channel::{bounded, select, unbounded, Receiver, Sender};
 use mlua::{Function, Lua, LuaSerdeExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use sws_crawler::{CountedTx, CrawlerConfig, OnError, PageLocation, Scrapable, Seed, Sitemap};
+use sws_crawler::{
+    CountedTx, CrawlerConfig, CrawlingContext, OnError, PageLocation, Scrapable, Seed,
+};
 use sws_scraper::Html;
+use texting_robots::Robot;
 
-use crate::interop::{LuaDate, LuaHtml, LuaStringRecord, LuaSwsContext, SwsContext};
+use crate::interop::{
+    LuaCrawlingContext, LuaDate, LuaHtml, LuaScrapingContext, LuaStringRecord, ScrapingContext,
+};
 use crate::ns::{globals, sws};
 use crate::writer;
 
@@ -26,7 +32,7 @@ pub struct LuaScraperConfig {
 pub struct LuaScraper {
     lua: Lua,
     seed: Seed,
-    context: LuaSwsContext,
+    context: LuaScrapingContext,
 }
 
 impl Scrapable for LuaScraper {
@@ -47,7 +53,8 @@ impl Scrapable for LuaScraper {
             .get::<_, Option<Function>>(globals::ACCEPT_URL)?
             .is_none()
         {
-            let accept_url = lua.create_function(|_, (_url, _sm): (String, String)| Ok(true))?;
+            let accept_url =
+                lua.create_function(|_, (_url, _ctx): (String, LuaCrawlingContext)| Ok(true))?;
             globals.set(globals::ACCEPT_URL, accept_url)?;
         }
 
@@ -159,13 +166,14 @@ impl Scrapable for LuaScraper {
 
         // Setup context
 
-        let context = LuaSwsContext::new(SwsContext::new(tx_record.clone()));
+        let context = LuaScrapingContext::new(ScrapingContext::new(tx_record.clone()));
 
         Ok(Self { lua, seed, context })
     }
 
-    fn init(&mut self, tx_url: CountedTx) {
+    fn init(&mut self, tx_url: CountedTx, robot: Option<Arc<Robot>>) {
         self.context.borrow_mut().tx_url = Some(tx_url);
+        self.context.borrow_mut().robot = robot;
     }
 
     fn finalizer(&mut self) {
@@ -194,23 +202,20 @@ impl Scrapable for LuaScraper {
             .map_err(|e| anyhow::anyhow!(e.to_string().replace('\n', "")))
     }
 
-    fn accept(&self, sm: Sitemap, url: &str) -> bool {
-        let sm = match sm {
-            Sitemap::Index => sws::sitemap::INDEX,
-            Sitemap::Urlset => sws::sitemap::URL_SET,
-        };
-
+    fn accept(&self, url: &str, crawling_ctx: CrawlingContext) -> bool {
         let accept_url: Function = self
             .lua
             .globals()
             .get(globals::ACCEPT_URL)
             .unwrap_or_else(|_| panic!("Function {} not found", globals::ACCEPT_URL)); // Ensured in constructor
 
-        match accept_url.call::<_, bool>((url.to_string(), sm)) {
+        let ctx: LuaCrawlingContext = crawling_ctx.clone().into();
+        match accept_url.call::<_, bool>((url.to_string(), ctx)) {
             Ok(accepted) => accepted,
             Err(e) => {
                 log::error!(
-                    "Couldn't process {sm:?} {url}: {}",
+                    "Couldn't process URL {url} ({crawling_ctx:?}) in function {}: {}",
+                    globals::ACCEPT_URL,
                     e.to_string().replace('\n', "")
                 );
                 false

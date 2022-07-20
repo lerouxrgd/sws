@@ -41,16 +41,19 @@ pub mod sws {
         pub const ATTRS: &str = "attrs"; // Function
     }
 
-    pub const RECORD: &str = "Record"; // Function
-    pub mod record {
-        //! The `Record` class
-        pub const PUSH_FIELD: &str = "pushField"; // Function
-    }
-
     pub const DATE: &str = "Date"; // Function
     pub mod date {
         //! The `Date` class
         pub const FORMAT: &str = "format"; // Function
+    }
+
+    pub mod scraping_context {
+        //! The `ScrapingContext` class
+        pub const PAGE_LOCATION: &str = "pageLocation"; // Function
+        pub const SEND_RECORD: &str = "sendRecord"; // Function
+        pub const SEND_URL: &str = "sendUrl"; // Function
+        pub const WORKER_ID: &str = "workerId"; // Function
+        pub const ROBOT: &str = "robot"; // Function
     }
 
     pub mod page_location {
@@ -66,18 +69,27 @@ pub mod sws {
         pub const PATH: &str = "PATH"; // String
     }
 
+    pub const RECORD: &str = "Record"; // Function
+    pub mod record {
+        //! The `Record` class
+        pub const PUSH_FIELD: &str = "pushField"; // Function
+    }
+
+    pub mod crawling_context {
+        //! The `CrawlingContext` class
+        pub const ROBOT: &str = "robot"; // Function
+        pub const SITEMAP: &str = "sitemap"; // Function
+    }
+
+    pub mod robot {
+        //! The `Robot` class
+        pub const ALLOWED: &str = "allowed"; // Function
+    }
+
     pub const SITEMAP: &str = "Sitemap"; // Table
     pub mod sitemap {
         //! The `Sitemap` enum
         pub const INDEX: &str = "INDEX"; // String
         pub const URL_SET: &str = "URL_SET"; // String
-    }
-
-    pub mod context {
-        //! The `SwsContext` class
-        pub const PAGE_LOCATION: &str = "pageLocation"; // Function
-        pub const SEND_RECORD: &str = "sendRecord"; // Function
-        pub const SEND_URL: &str = "sendUrl"; // Function
-        pub const WORKER_ID: &str = "workerId"; // Function
     }
 }
