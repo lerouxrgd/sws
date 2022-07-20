@@ -17,20 +17,20 @@ pub struct CsvWriterConfig {
 impl Default for CsvWriterConfig {
     fn default() -> Self {
         Self {
-            delimiter: ',',
+            delimiter: default_csv_delimiter(),
             escape: None,
             flexible: false,
-            terminator: CsvTerminator::Any('\n'),
+            terminator: default_csv_terminator(),
         }
     }
 }
 
 fn default_csv_delimiter() -> char {
-    CsvWriterConfig::default().delimiter
+    ','
 }
 
 fn default_csv_terminator() -> CsvTerminator {
-    CsvWriterConfig::default().terminator
+    CsvTerminator::Any('\n')
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

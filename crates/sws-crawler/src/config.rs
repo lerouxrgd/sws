@@ -31,43 +31,43 @@ pub struct CrawlerConfig {
 impl Default for CrawlerConfig {
     fn default() -> Self {
         Self {
-            user_agent: String::from("SWSbot"),
-            page_buffer: 10_000,
-            throttle: None,
-            num_workers: cmp::max(1, num_cpus::get().saturating_sub(2)),
-            on_dl_error: OnError::SkipAndLog,
-            on_xml_error: OnError::SkipAndLog,
-            on_scrap_error: OnError::SkipAndLog,
+            user_agent: default_user_agent(),
+            page_buffer: default_page_buffer(),
+            throttle: default_throttle(),
+            num_workers: default_num_workers(),
+            on_dl_error: default_on_dl_error(),
+            on_xml_error: default_on_xml_error(),
+            on_scrap_error: default_on_scrap_error(),
         }
     }
 }
 
 fn default_user_agent() -> String {
-    CrawlerConfig::default().user_agent
+    String::from("SWSbot")
 }
 
 fn default_page_buffer() -> usize {
-    CrawlerConfig::default().page_buffer
+    10_000
 }
 
 fn default_throttle() -> Option<Throttle> {
-    CrawlerConfig::default().throttle
+    None
 }
 
 fn default_num_workers() -> usize {
-    CrawlerConfig::default().num_workers
+    cmp::max(1, num_cpus::get().saturating_sub(2))
 }
 
 fn default_on_dl_error() -> OnError {
-    CrawlerConfig::default().on_dl_error
+    OnError::SkipAndLog
 }
 
 fn default_on_xml_error() -> OnError {
-    CrawlerConfig::default().on_xml_error
+    OnError::SkipAndLog
 }
 
 fn default_on_scrap_error() -> OnError {
-    CrawlerConfig::default().on_scrap_error
+    OnError::SkipAndLog
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
