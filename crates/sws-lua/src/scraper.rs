@@ -99,14 +99,25 @@ impl Scrapable for LuaScraper {
             ))
         })?;
 
-        let seed = match (sitemap_urls, seed_urls) {
-            (Some(urls), None) => Seed::Sitemaps(urls),
-            (None, Some(urls)) => Seed::Pages(urls),
+        let seed_robots: Option<String> = sws.get(sws::SEED_ROBOTS_TXT).map_err(|e| {
+            mlua::Error::RuntimeError(format!(
+                "Couldn't read {}.{} got: {}",
+                globals::SWS,
+                sws::SEED_ROBOTS_TXT,
+                e
+            ))
+        })?;
+
+        let seed = match (sitemap_urls, seed_urls, seed_robots) {
+            (Some(urls), None, None) => Seed::Sitemaps(urls),
+            (None, Some(urls), None) => Seed::Pages(urls),
+            (None, None, Some(url)) => Seed::RobotsTxt(url),
             _ => anyhow::bail!(
-                "Invalid seed, requires exactly one of: {ns}.{s1}, {ns}.{s2}",
+                "Invalid seed, requires exactly one of: {ns}.{s1}, {ns}.{s2}, {ns}.{s3}",
                 ns = globals::SWS,
                 s1 = sws::SEED_SITEMAPS,
-                s2 = sws::SEED_PAGES
+                s2 = sws::SEED_PAGES,
+                s3 = sws::SEED_ROBOTS_TXT
             ),
         };
 

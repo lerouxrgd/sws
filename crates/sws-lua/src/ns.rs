@@ -12,6 +12,7 @@ pub mod sws {
 
     pub const SEED_SITEMAPS: &str = "seedSitemaps"; // Table
     pub const SEED_PAGES: &str = "seedPages"; // Table
+    pub const SEED_ROBOTS_TXT: &str = "seedRobotsTxt"; // Table
 
     pub const CSV_WRITER_CONFIG: &str = "csvWriterConfig"; // Table
     pub const CRAWLER_CONFIG: &str = "crawlerConfig"; // Table
