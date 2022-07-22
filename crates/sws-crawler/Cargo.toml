@@ -24,3 +24,6 @@ tokio-stream = "0.1"
 
 [features]
 clap = ["dep:clap"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros"] }

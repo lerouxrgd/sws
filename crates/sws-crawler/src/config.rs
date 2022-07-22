@@ -26,6 +26,9 @@ pub struct CrawlerConfig {
 
     #[serde(default = "default_on_scrap_error")]
     pub on_scrap_error: OnError,
+
+    #[serde(default = "default_robot")]
+    pub robot: Option<String>,
 }
 
 impl Default for CrawlerConfig {
@@ -38,6 +41,7 @@ impl Default for CrawlerConfig {
             on_dl_error: default_on_dl_error(),
             on_xml_error: default_on_xml_error(),
             on_scrap_error: default_on_scrap_error(),
+            robot: default_robot(),
         }
     }
 }
@@ -68,6 +72,10 @@ fn default_on_xml_error() -> OnError {
 
 fn default_on_scrap_error() -> OnError {
     OnError::SkipAndLog
+}
+
+fn default_robot() -> Option<String> {
+    None
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

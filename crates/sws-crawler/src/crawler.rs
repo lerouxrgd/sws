@@ -223,24 +223,25 @@ where
     let scraper = <T as Scrapable>::new(scraper_conf)?;
     let seed = scraper.seed();
 
-    let mut robot = None;
-
-    let throttle = match &seed {
-        Seed::RobotsTxt(url) => {
+    let (robot, throttle) = match (&seed, &crawler_conf.robot) {
+        (Seed::RobotsTxt(_), Some(_)) => anyhow::bail!(
+            "Invalid seed config, cannot use Seed::RobotsTxt when `crawler_conf.robot` is defined"
+        ),
+        (Seed::RobotsTxt(url), None) | (_, Some(url)) => {
             let r = HTTP_CLI.get(url).send().await?.bytes().await?;
             let r = Robot::new(&crawler_conf.user_agent, &r)?;
             let throttle = match (r.delay, crawler_conf.throttle) {
                 (_, Some(throttle)) => throttle,
                 (Some(delay), None) => {
-                    anyhow::ensure!(delay > 0.0, "delay must be > 0.0");
+                    anyhow::ensure!(delay > 0.0, "Robot delay must be > 0.0");
                     Throttle::Delay(delay)
                 }
                 (None, None) => Throttle::default(),
             };
-            robot = Some(Arc::new(r));
-            throttle
+            let robot = Some(Arc::new(r));
+            (robot, throttle)
         }
-        _ => crawler_conf.throttle.unwrap_or_default(),
+        _ => (None, crawler_conf.throttle.unwrap_or_default()),
     };
     let throttler = Throttler::new(throttle);
 

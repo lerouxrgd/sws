@@ -63,7 +63,7 @@ pub struct CrawlArgs {
     pub requests_per_second: Option<usize>,
 
     /// Override crawler's delay between requests
-    #[clap(display_order(9), group = "throttle", long = "delay")]
+    #[clap(display_order(9), group = "throttle", long = "delay", value_parser = delay_positive)]
     pub requests_delay: Option<f32>,
 
     /// Override crawler's number of CPU workers used to scrap pages
@@ -85,6 +85,17 @@ pub struct CrawlArgs {
     /// Don't output logs
     #[clap(display_order(14), long, short)]
     pub quiet: bool,
+}
+
+fn delay_positive(s: &str) -> Result<f32, String> {
+    let delay: f32 = s
+        .parse()
+        .map_err(|_| format!("`{}` isn't a f32 value", s))?;
+    if delay > 0. {
+        Ok(delay)
+    } else {
+        Err("delay must be strictly positive".into())
+    }
 }
 
 pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
@@ -116,7 +127,6 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
         crawler_conf.throttle = Some(Throttle::PerSecond(rps.try_into()?));
     }
     if let Some(delay) = args.requests_delay {
-        anyhow::ensure!(delay > 0.0, "delay must be > 0.0");
         crawler_conf.throttle = Some(Throttle::Delay(delay));
     }
     if let Some(num_workers) = args.num_workers {
