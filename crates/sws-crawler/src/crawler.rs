@@ -20,7 +20,9 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::config::{CrawlerConfig, OnError, Throttle};
 use crate::limiter::{RateLimitedExt, RateLimiter};
-use crate::scrapable::{CountedTx, CrawlingContext, PageLocation, Scrapable, Seed, Sitemap};
+use crate::scrapable::{
+    CountedTx, CrawlingContext, PageLocation, Scrapable, ScrapingContext, Seed, Sitemap,
+};
 
 lazy_static! {
     static ref HTTP_CLI: reqwest::Client = reqwest::ClientBuilder::new()
@@ -228,9 +230,9 @@ where
             "Invalid seed config, cannot use Seed::RobotsTxt when `crawler_conf.robot` is defined"
         ),
         (Seed::RobotsTxt(url), None) | (_, Some(url)) => {
-            let r = HTTP_CLI.get(url).send().await?.bytes().await?;
-            let r = Robot::new(&crawler_conf.user_agent, &r)?;
-            let throttle = match (r.delay, crawler_conf.throttle) {
+            let robot = HTTP_CLI.get(url).send().await?.bytes().await?;
+            let robot = Robot::new(&crawler_conf.user_agent, &robot)?;
+            let throttle = match (robot.delay, crawler_conf.throttle) {
                 (_, Some(throttle)) => throttle,
                 (Some(delay), None) => {
                     anyhow::ensure!(delay > 0.0, "Robot delay must be > 0.0");
@@ -238,7 +240,7 @@ where
                 }
                 (None, None) => Throttle::default(),
             };
-            let robot = Some(Arc::new(r));
+            let robot = Some(Arc::new(robot));
             (robot, throttle)
         }
         _ => (None, crawler_conf.throttle.unwrap_or_default()),
@@ -271,7 +273,6 @@ where
             .name(format!("{id}"))
             .spawn(move || {
                 let mut scraper = <T as Scrapable>::new(&scraper_conf)?;
-                scraper.init(tx_url, robot);
                 loop {
                     crossbeam_channel::select! {
                         recv(rx_page) -> page => {
@@ -280,7 +281,12 @@ where
                             }
                             if let Ok(Page { page, location }) = page {
                                 let location = Rc::new(location);
-                                match scraper.scrap(page, location.clone()) {
+                                let ctx = ScrapingContext::new (
+                                    location.clone(),
+                                    Some(tx_url.clone()),
+                                    robot.clone()
+                                );
+                                match scraper.scrap(page, ctx) {
                                     Ok(()) => (),
                                     Err(e) => match crawler_conf.on_scrap_error {
                                         OnError::SkipAndLog => {

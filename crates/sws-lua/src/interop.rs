@@ -1,12 +1,10 @@
-use std::cell::RefCell;
-use std::cell::{Ref, RefMut};
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::{fs, thread};
 
 use crossbeam_channel::Sender;
 use mlua::{MetaMethod, UserData, UserDataMethods};
-use sws_crawler::{CountedTx, CrawlingContext, PageLocation, Sitemap};
+use sws_crawler::{CountedTx, CrawlingContext, PageLocation, ScrapingContext, Sitemap};
 use sws_scraper::CaseSensitivity;
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
 use texting_robots::Robot;
@@ -251,51 +249,35 @@ impl From<CrawlingContext> for LuaCrawlingContext {
     }
 }
 
-pub struct ScrapingContext {
-    pub(crate) tx_writer: Sender<csv::StringRecord>,
-    pub(crate) page_location: Weak<PageLocation>,
-    pub(crate) tx_url: Option<CountedTx>,
-    pub(crate) robot: Option<Arc<Robot>>,
-}
-
-impl ScrapingContext {
-    pub fn new(tx_writer: Sender<csv::StringRecord>) -> Self {
-        Self {
-            tx_writer,
-            page_location: Weak::new(),
-            tx_url: None,
-            robot: None,
-        }
-    }
-}
-
 #[derive(Clone)]
-pub struct LuaScrapingContext(Rc<RefCell<ScrapingContext>>);
+pub struct LuaScrapingContext {
+    tx_writer: Sender<csv::StringRecord>,
+    page_location: Weak<PageLocation>,
+    tx_url: Option<CountedTx>,
+    robot: Option<Arc<Robot>>,
+}
 
 impl LuaScrapingContext {
-    pub fn new(ctx: ScrapingContext) -> Self {
-        Self(Rc::new(RefCell::new(ctx)))
-    }
-
-    pub fn borrow(&self) -> Ref<'_, ScrapingContext> {
-        self.0.borrow()
-    }
-
-    pub fn borrow_mut(&self) -> RefMut<'_, ScrapingContext> {
-        self.0.borrow_mut()
+    pub fn new(tx_writer: Sender<csv::StringRecord>, ctx: ScrapingContext) -> Self {
+        Self {
+            tx_writer,
+            page_location: Rc::downgrade(&ctx.location()),
+            tx_url: ctx.tx_url(),
+            robot: ctx.robot(),
+        }
     }
 }
 
 impl UserData for LuaScrapingContext {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_method(sws::scraping_context::PAGE_LOCATION, |_, ctx, ()| {
-            Ok(LuaPageLocation(ctx.borrow().page_location.clone()))
+            Ok(LuaPageLocation(ctx.page_location.clone()))
         });
 
         methods.add_method(
             sws::scraping_context::SEND_RECORD,
             |_, ctx, record: LuaStringRecord| {
-                ctx.borrow().tx_writer.send(record.0).ok();
+                ctx.tx_writer.send(record.0).ok();
                 Ok(())
             },
         );
@@ -309,7 +291,7 @@ impl UserData for LuaScrapingContext {
         });
 
         methods.add_method(sws::scraping_context::SEND_URL, |_, ctx, url: String| {
-            if let Some(tx_url) = &ctx.borrow().tx_url {
+            if let Some(tx_url) = &ctx.tx_url {
                 tx_url.send(url);
             } else {
                 log::warn!("Context not initalized, coudln't send URL {url}")
@@ -318,7 +300,7 @@ impl UserData for LuaScrapingContext {
         });
 
         methods.add_method(sws::scraping_context::ROBOT, |_, ctx, ()| {
-            Ok(ctx.borrow().robot.clone().map(LuaRobot))
+            Ok(ctx.robot.clone().map(LuaRobot))
         });
     }
 }

@@ -1,6 +1,4 @@
 use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::Arc;
 use std::{fs, thread};
 
 use crossbeam_channel::{bounded, select, unbounded, Receiver, Sender};
@@ -8,14 +6,11 @@ use mlua::{Function, Lua, LuaSerdeExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use sws_crawler::{
-    CountedTx, CrawlerConfig, CrawlingContext, OnError, PageLocation, Scrapable, Seed,
+    CrawlerConfig, CrawlingContext, OnError, PageLocation, Scrapable, ScrapingContext, Seed,
 };
 use sws_scraper::Html;
-use texting_robots::Robot;
 
-use crate::interop::{
-    LuaCrawlingContext, LuaDate, LuaHtml, LuaScrapingContext, LuaStringRecord, ScrapingContext,
-};
+use crate::interop::{LuaCrawlingContext, LuaDate, LuaHtml, LuaScrapingContext, LuaStringRecord};
 use crate::ns::{globals, sws};
 use crate::writer;
 
@@ -32,7 +27,7 @@ pub struct LuaScraperConfig {
 pub struct LuaScraper {
     lua: Lua,
     seed: Seed,
-    context: LuaScrapingContext,
+    tx_record: Sender<csv::StringRecord>,
 }
 
 impl Scrapable for LuaScraper {
@@ -177,14 +172,11 @@ impl Scrapable for LuaScraper {
 
         // Setup context
 
-        let context = LuaScrapingContext::new(ScrapingContext::new(tx_record.clone()));
-
-        Ok(Self { lua, seed, context })
-    }
-
-    fn init(&mut self, tx_url: CountedTx, robot: Option<Arc<Robot>>) {
-        self.context.borrow_mut().tx_url = Some(tx_url);
-        self.context.borrow_mut().robot = robot;
+        Ok(Self {
+            lua,
+            seed,
+            tx_record: tx_record.clone(),
+        })
     }
 
     fn finalizer(&mut self) {
@@ -198,7 +190,7 @@ impl Scrapable for LuaScraper {
         self.seed.clone()
     }
 
-    fn scrap(&mut self, page: String, location: Rc<PageLocation>) -> anyhow::Result<()> {
+    fn scrap(&mut self, page: String, scraping_context: ScrapingContext) -> anyhow::Result<()> {
         let scrap_page: Function = self
             .lua
             .globals()
@@ -206,10 +198,10 @@ impl Scrapable for LuaScraper {
             .unwrap_or_else(|_| panic!("Function {} not found", globals::SCRAP_PAGE)); // Ensured in constructor
 
         let page = LuaHtml(Html::parse_document(&page));
-        self.context.borrow_mut().page_location = Rc::downgrade(&location);
+        let ctx = LuaScrapingContext::new(self.tx_record.clone(), scraping_context);
 
         scrap_page
-            .call::<_, ()>((page, self.context.clone()))
+            .call::<_, ()>((page, ctx))
             .map_err(|e| anyhow::anyhow!(e.to_string().replace('\n', "")))
     }
 
@@ -273,10 +265,9 @@ pub fn scrap_glob(
             .spawn(move || {
                 let mut scraper = LuaScraper::new(&config)?;
                 for path in rx_path.into_iter() {
-                    match scraper.scrap(
-                        fs::read_to_string(&path)?,
-                        Rc::new(PageLocation::Path(path)),
-                    ) {
+                    let page = fs::read_to_string(&path)?;
+                    let ctx = ScrapingContext::with_location(PageLocation::Path(path));
+                    match scraper.scrap(page, ctx) {
                         Ok(()) => (),
                         Err(e) => match on_error {
                             OnError::SkipAndLog => {
@@ -311,7 +302,7 @@ pub fn scrap_page(
     location: PageLocation,
 ) -> anyhow::Result<()> {
     let mut scraper = LuaScraper::new(config)?;
-    scraper.scrap(page, Rc::new(location))?;
+    scraper.scrap(page, ScrapingContext::with_location(location))?;
     scraper.finalizer();
     Ok(())
 }

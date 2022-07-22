@@ -1,6 +1,4 @@
-use std::rc::Rc;
-
-use sws_crawler::{crawl_site, CrawlerConfig, CrawlingContext, PageLocation, Scrapable, Seed};
+use sws_crawler::{crawl_site, CrawlerConfig, CrawlingContext, Scrapable, ScrapingContext, Seed};
 
 #[tokio::test]
 #[should_panic(
@@ -20,10 +18,10 @@ async fn validate_robot_config() {
         fn seed(&self) -> Seed {
             sws_crawler::Seed::RobotsTxt("https://dummy-url.com/robots.txt".into())
         }
-        fn accept(&self, _url: &str, _crawling_ctx: CrawlingContext) -> bool {
+        fn accept(&self, _url: &str, _ctx: CrawlingContext) -> bool {
             true
         }
-        fn scrap(&mut self, _page: String, _location: Rc<PageLocation>) -> anyhow::Result<()> {
+        fn scrap(&mut self, _page: String, _ctx: ScrapingContext) -> anyhow::Result<()> {
             Ok(())
         }
     }

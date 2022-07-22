@@ -15,13 +15,11 @@ pub trait Scrapable {
     where
         Self: Sized;
 
-    fn init(&mut self, _tx_url: CountedTx, _robot: Option<Arc<Robot>>) {}
-
     fn seed(&self) -> Seed;
 
     fn accept(&self, url: &str, crawling_ctx: CrawlingContext) -> bool;
 
-    fn scrap(&mut self, page: String, location: Rc<PageLocation>) -> anyhow::Result<()>;
+    fn scrap(&mut self, page: String, scraping_ctx: ScrapingContext) -> anyhow::Result<()>;
 
     fn finalizer(&mut self) {}
 }
@@ -76,6 +74,43 @@ impl<'a> TryFrom<dom::Root<'a>> for Sitemap {
         };
 
         Ok(sm)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ScrapingContext {
+    location: Rc<PageLocation>,
+    tx_url: Option<CountedTx>,
+    robot: Option<Arc<Robot>>,
+}
+
+impl ScrapingContext {
+    pub fn with_location(location: PageLocation) -> Self {
+        Self::new(Rc::new(location), None, None)
+    }
+
+    pub(crate) fn new(
+        location: Rc<PageLocation>,
+        tx_url: Option<CountedTx>,
+        robot: Option<Arc<Robot>>,
+    ) -> Self {
+        Self {
+            location,
+            tx_url,
+            robot,
+        }
+    }
+
+    pub fn location(&self) -> Rc<PageLocation> {
+        self.location.clone()
+    }
+
+    pub fn tx_url(&self) -> Option<CountedTx> {
+        self.tx_url.clone()
+    }
+
+    pub fn robot(&self) -> Option<Arc<Robot>> {
+        self.robot.clone()
     }
 }
 
