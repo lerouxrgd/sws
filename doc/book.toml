@@ -1,0 +1,12 @@
+[book]
+authors = ["Romain Leroux"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Sitemap Web Scraper"
+
+# https://crates.io/crates/mdbook-pagetoc
+[preprocessor.pagetoc]
+[output.html]
+additional-css = ["theme/pagetoc.css"]
+additional-js  = ["theme/pagetoc.js"]
