@@ -25,7 +25,7 @@ pub struct Tree<T> {
     sm: RefCell<SlotMap<NodeId, Node<T>>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Node<T> {
     parent: NodeId,
     prev_sibling: NodeId,

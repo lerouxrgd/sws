@@ -89,7 +89,7 @@ impl ElementRef {
             if let Edge::Open(node) = edge {
                 node.map_value(|v| {
                     if let Node::Text(ref text) = v {
-                        all_text.push_str(&*text);
+                        all_text.push_str(text);
                     }
                 });
             }

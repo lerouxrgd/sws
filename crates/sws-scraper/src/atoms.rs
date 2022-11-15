@@ -7,7 +7,7 @@ pub struct AtomString(pub DefaultAtom);
 
 impl AsRef<str> for AtomString {
     fn as_ref(&self) -> &str {
-        &*self.0
+        &self.0
     }
 }
 
