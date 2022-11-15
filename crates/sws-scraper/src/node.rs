@@ -332,7 +332,7 @@ impl fmt::Debug for Element {
 }
 
 /// HTML Processing Instruction.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessingInstruction {
     /// The PI target.
     pub target: StrTendril,
@@ -345,11 +345,5 @@ impl Deref for ProcessingInstruction {
 
     fn deref(&self) -> &str {
         self.data.deref()
-    }
-}
-
-impl fmt::Debug for ProcessingInstruction {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{:?} {:?}", self, self.data)
     }
 }

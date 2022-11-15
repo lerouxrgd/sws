@@ -82,8 +82,12 @@ pub struct CrawlArgs {
     #[clap(display_order(13), arg_enum, long)]
     pub on_scrap_error: Option<OnError>,
 
+    /// Override crawler's robot URL
+    #[clap(display_order(14), long)]
+    pub robot: Option<String>,
+
     /// Don't output logs
-    #[clap(display_order(14), long, short)]
+    #[clap(display_order(15), long, short)]
     pub quiet: bool,
 }
 
@@ -140,6 +144,9 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
     }
     if let Some(on_scrap_error) = args.on_scrap_error {
         crawler_conf.on_scrap_error = on_scrap_error;
+    }
+    if let Some(robot) = args.robot {
+        crawler_conf.robot = Some(robot);
     }
 
     let rt = runtime::Builder::new_multi_thread().enable_all().build()?;
