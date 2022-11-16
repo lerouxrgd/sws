@@ -79,7 +79,7 @@ fn default_robot() -> Option<String> {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "clap", derive(clap::ArgEnum))]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 pub enum OnError {
     Fail,
     SkipAndLog,

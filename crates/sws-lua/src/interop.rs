@@ -12,6 +12,7 @@ use texting_robots::Robot;
 use crate::ns::{globals, sws};
 
 pub struct LuaHtml(pub(crate) Html);
+
 impl UserData for LuaHtml {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, html, ()| {
@@ -36,6 +37,7 @@ impl UserData for LuaHtml {
 
 #[derive(Clone)]
 pub struct LuaSelect(pub(crate) Select);
+
 impl UserData for LuaSelect {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, sel, ()| {
@@ -68,6 +70,7 @@ impl UserData for LuaSelect {
 }
 
 pub struct LuaElementRef(pub(crate) ElementRef);
+
 impl UserData for LuaElementRef {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, elem, ()| {
@@ -140,6 +143,7 @@ impl UserData for LuaElementRef {
 
 #[derive(Debug)]
 pub struct LuaPageLocation(pub(crate) Weak<PageLocation>);
+
 impl UserData for LuaPageLocation {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, pl, ()| Ok(format!("{:?}", pl.0)));
@@ -176,6 +180,7 @@ impl UserData for LuaPageLocation {
 
 #[derive(Clone, Default)]
 pub struct LuaStringRecord(pub(crate) csv::StringRecord);
+
 impl UserData for LuaStringRecord {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, r, ()| Ok(format!("{:?}", r.0)));
@@ -209,6 +214,7 @@ impl UserData for LuaDate {
 
 #[derive(Clone, Debug)]
 pub struct LuaRobot(pub(crate) Arc<Robot>);
+
 impl UserData for LuaRobot {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, r, ()| Ok(format!("{:?}", r.0)));

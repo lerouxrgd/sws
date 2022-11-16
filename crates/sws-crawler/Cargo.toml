@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "3", optional = true }
+clap = { version = "4", optional = true }
 crossbeam-channel = "0.5"
 flate2 = "1"
 futures = "0.3"
