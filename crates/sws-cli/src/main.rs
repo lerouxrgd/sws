@@ -31,11 +31,11 @@ pub enum SubCommand {
 #[clap(group = clap::ArgGroup::new("throttle"))]
 pub struct CrawlArgs {
     /// Path to the Lua script that defines scraping logic
-    #[clap(display_order(1), parse(from_os_str), long, short)]
+    #[clap(display_order(1), long, short)]
     pub script: PathBuf,
 
     /// Optional file that will contain scraped data, stdout otherwise
-    #[clap(display_order(2), parse(from_os_str), long, short)]
+    #[clap(display_order(2), long, short)]
     pub output_file: Option<PathBuf>,
 
     /// Append to output file
@@ -71,18 +71,18 @@ pub struct CrawlArgs {
     pub num_workers: Option<usize>,
 
     /// Override crawler's download error handling strategy
-    #[clap(display_order(11), arg_enum, long)]
+    #[clap(display_order(11), value_enum, long)]
     pub on_dl_error: Option<OnError>,
 
     /// Override crawler's xml error handling strategy
-    #[clap(display_order(12), arg_enum, long)]
+    #[clap(display_order(12), value_enum, long)]
     pub on_xml_error: Option<OnError>,
 
     /// Override crawler's scrap error handling strategy
-    #[clap(display_order(13), arg_enum, long)]
+    #[clap(display_order(13), value_enum, long)]
     pub on_scrap_error: Option<OnError>,
 
-    /// Override crawler's robot URL
+    /// Override crawler's robots.txt URL
     #[clap(display_order(14), long)]
     pub robot: Option<String>,
 
@@ -159,7 +159,7 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
 #[clap(group = clap::ArgGroup::new("mode").requires_all(&["output-file"]))]
 pub struct ScrapArgs {
     /// Path to the Lua script that defines scraping logic
-    #[clap(display_order(1), parse(from_os_str), long, short)]
+    #[clap(display_order(1), long, short)]
     pub script: PathBuf,
 
     /// A distant html page to scrap
@@ -170,27 +170,27 @@ pub struct ScrapArgs {
     #[clap(display_order(3), group = "pages", long = "files")]
     pub glob: Option<String>,
 
-    /// Scrap error handling strategy when scraping local files
-    #[clap(display_order(4), arg_enum, long)]
-    #[clap(conflicts_with = "url")]
-    pub on_error: Option<OnError>,
-
-    /// Set the number of CPU workers when scraping local files
-    #[clap(display_order(5), long)]
-    #[clap(conflicts_with = "url")]
-    pub num_workers: Option<usize>,
-
     /// Optional file that will contain scraped data, stdout otherwise
-    #[clap(display_order(6), parse(from_os_str), long, short)]
+    #[clap(display_order(4), long, short)]
     pub output_file: Option<PathBuf>,
 
     /// Append to output file
-    #[clap(display_order(7), group = "mode", long)]
+    #[clap(display_order(5), group = "mode", long)]
     pub append: bool,
 
     /// Truncate output file
-    #[clap(display_order(8), group = "mode", long)]
+    #[clap(display_order(6), group = "mode", long)]
     pub truncate: bool,
+
+    /// Set the number of CPU workers when scraping local files
+    #[clap(display_order(7), long)]
+    #[clap(conflicts_with = "url")]
+    pub num_workers: Option<usize>,
+
+    /// Scrap error handling strategy when scraping local files
+    #[clap(display_order(8), value_enum, long)]
+    #[clap(conflicts_with = "url")]
+    pub on_error: Option<OnError>,
 
     /// Don't output logs
     #[clap(display_order(9), long, short)]
