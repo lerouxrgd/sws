@@ -12,7 +12,7 @@ impl Element for ElementRef {
 
     fn opaque(&self) -> OpaqueElement {
         self.node
-            .map_value(|v| OpaqueElement::new(v))
+            .map_value(OpaqueElement::new)
             .expect("ElementRef isn't valid (null Element)")
     }
 
