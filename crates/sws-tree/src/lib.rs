@@ -311,7 +311,7 @@ impl<T> NodeRef<T> {
             tree.sm
                 .borrow_mut()
                 .get_mut(new_child_id)
-                .map(|mut new_child| {
+                .map(|new_child| {
                     new_child.parent = self.id;
                     new_child.prev_sibling = last_child_id;
                 });
@@ -319,11 +319,11 @@ impl<T> NodeRef<T> {
             tree.sm
                 .borrow_mut()
                 .get_mut(last_child_id)
-                .map(|mut last_child| {
+                .map(|last_child| {
                     last_child.next_sibling = new_child_id;
                 });
 
-            tree.sm.borrow_mut().get_mut(self.id).map(|mut this_node| {
+            tree.sm.borrow_mut().get_mut(self.id).map(|this_node| {
                 if !this_node.children.0.is_null() {
                     this_node.children.1 = new_child_id;
                 } else {
@@ -349,7 +349,7 @@ impl<T> NodeRef<T> {
             tree.sm
                 .borrow_mut()
                 .get_mut(new_child_id)
-                .map(|mut new_child| {
+                .map(|new_child| {
                     new_child.parent = self.id;
                     new_child.next_sibling = first_child_id;
                 });
@@ -357,11 +357,11 @@ impl<T> NodeRef<T> {
             tree.sm
                 .borrow_mut()
                 .get_mut(first_child_id)
-                .map(|mut first_child| {
+                .map(|first_child| {
                     first_child.prev_sibling = new_child_id;
                 });
 
-            tree.sm.borrow_mut().get_mut(self.id).map(|mut this_node| {
+            tree.sm.borrow_mut().get_mut(self.id).map(|this_node| {
                 if !this_node.children.1.is_null() {
                     this_node.children.0 = new_child_id;
                 } else {
@@ -396,7 +396,7 @@ impl<T> NodeRef<T> {
                 tree.sm
                     .borrow_mut()
                     .get_mut(new_sibling_id)
-                    .map(|mut new_sibling| {
+                    .map(|new_sibling| {
                         new_sibling.parent = parent.id;
                         new_sibling.prev_sibling = prev_sibling_id;
                         new_sibling.next_sibling = self.id;
@@ -405,15 +405,15 @@ impl<T> NodeRef<T> {
                 tree.sm
                     .borrow_mut()
                     .get_mut(prev_sibling_id)
-                    .map(|mut prev_sibling| {
+                    .map(|prev_sibling| {
                         prev_sibling.next_sibling = new_sibling_id;
                     });
 
-                tree.sm.borrow_mut().get_mut(self.id).map(|mut this_node| {
+                tree.sm.borrow_mut().get_mut(self.id).map(|this_node| {
                     this_node.prev_sibling = new_sibling_id;
                 });
 
-                tree.sm.borrow_mut().get_mut(parent.id).map(|mut parent| {
+                tree.sm.borrow_mut().get_mut(parent.id).map(|parent| {
                     if parent.children.0 == self.id {
                         parent.children.0 = new_sibling_id;
                     }
@@ -445,7 +445,7 @@ impl<T> NodeRef<T> {
                 tree.sm
                     .borrow_mut()
                     .get_mut(new_sibling_id)
-                    .map(|mut new_sibling| {
+                    .map(|new_sibling| {
                         new_sibling.parent = parent.id;
                         new_sibling.prev_sibling = self.id;
                         new_sibling.next_sibling = next_sibling_id;
@@ -454,15 +454,15 @@ impl<T> NodeRef<T> {
                 tree.sm
                     .borrow_mut()
                     .get_mut(next_sibling_id)
-                    .map(|mut next_sibling| {
+                    .map(|next_sibling| {
                         next_sibling.prev_sibling = new_sibling_id;
                     });
 
-                tree.sm.borrow_mut().get_mut(self.id).map(|mut this_node| {
+                tree.sm.borrow_mut().get_mut(self.id).map(|this_node| {
                     this_node.next_sibling = new_sibling_id;
                 });
 
-                tree.sm.borrow_mut().get_mut(parent.id).map(|mut parent| {
+                tree.sm.borrow_mut().get_mut(parent.id).map(|parent| {
                     if parent.children.1 == self.id {
                         parent.children.1 = new_sibling_id;
                     }

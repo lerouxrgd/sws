@@ -27,7 +27,7 @@ pub enum SubCommand {
 
 /// Crawl sitemaps and scrap pages content
 #[derive(Debug, clap::Args)]
-#[clap(group = clap::ArgGroup::new("mode").requires_all(&["output-file"]))]
+#[clap(group = clap::ArgGroup::new("mode").requires_all(&["output_file"]))]
 #[clap(group = clap::ArgGroup::new("throttle"))]
 pub struct CrawlArgs {
     /// Path to the Lua script that defines scraping logic
@@ -156,7 +156,7 @@ pub fn crawl(args: CrawlArgs) -> anyhow::Result<()> {
 /// Scrap a single remote page or multiple local pages
 #[derive(Debug, clap::Args)]
 #[clap(group = clap::ArgGroup::new("pages").required(true))]
-#[clap(group = clap::ArgGroup::new("mode").requires_all(&["output-file"]))]
+#[clap(group = clap::ArgGroup::new("mode").requires_all(&["output_file"]))]
 pub struct ScrapArgs {
     /// Path to the Lua script that defines scraping logic
     #[clap(display_order(1), long, short)]

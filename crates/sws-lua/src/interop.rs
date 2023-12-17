@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::{fs, thread};
 
 use crossbeam_channel::Sender;
-use mlua::{MetaMethod, UserData, UserDataMethods};
+use mlua::{FromLua, MetaMethod, UserData, UserDataMethods};
 use sws_crawler::{CountedTx, CrawlingContext, PageLocation, ScrapingContext, Sitemap};
 use sws_scraper::CaseSensitivity;
 use sws_scraper::{element_ref::Select, ElementRef, Html, Selector};
@@ -181,6 +181,15 @@ impl UserData for LuaPageLocation {
 #[derive(Clone, Default)]
 pub struct LuaStringRecord(pub(crate) csv::StringRecord);
 
+impl<'lua> FromLua<'lua> for LuaStringRecord {
+    fn from_lua(value: mlua::Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
+        match value {
+            mlua::Value::UserData(ud) => Ok(ud.borrow::<Self>()?.clone()),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl UserData for LuaStringRecord {
     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::ToString, |_, r, ()| Ok(format!("{:?}", r.0)));
@@ -229,6 +238,15 @@ impl UserData for LuaRobot {
 pub struct LuaCrawlingContext {
     sm: &'static str,
     robot: Option<LuaRobot>,
+}
+
+impl<'lua> FromLua<'lua> for LuaCrawlingContext {
+    fn from_lua(value: mlua::Value<'lua>, _: &'lua mlua::Lua) -> mlua::Result<Self> {
+        match value {
+            mlua::Value::UserData(ud) => Ok(ud.borrow::<Self>()?.clone()),
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl UserData for LuaCrawlingContext {
