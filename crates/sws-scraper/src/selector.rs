@@ -3,12 +3,13 @@
 use std::convert::TryFrom;
 use std::fmt;
 
-use selectors::parser::SelectorParseErrorKind;
-use selectors::{matching, parser};
-use smallvec::SmallVec;
+use cssparser::ToCss;
+use html5ever::{LocalName, Namespace};
+use selectors::parser::{ParseRelative, SelectorParseErrorKind};
+use selectors::{matching, parser, SelectorList};
 
-use crate::atoms::AtomString;
 use crate::element_ref::ElementRef;
+use crate::error::SelectorErrorKind;
 
 /// Wrapper around CSS selectors.
 ///
@@ -16,17 +17,18 @@ use crate::element_ref::ElementRef;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selector {
     /// The CSS selectors.
-    pub selectors: SmallVec<[parser::Selector<Simple>; 1]>,
+    selectors: SelectorList<Simple>,
 }
 
 impl Selector {
     /// Parses a CSS selector group.
-    pub fn parse(
-        selectors: &'_ str,
-    ) -> Result<Self, cssparser::ParseError<'_, SelectorParseErrorKind<'_>>> {
+    pub fn parse(selectors: &'_ str) -> Result<Self, SelectorErrorKind> {
         let mut parser_input = cssparser::ParserInput::new(selectors);
         let mut parser = cssparser::Parser::new(&mut parser_input);
-        parser::SelectorList::parse(&Parser, &mut parser).map(|list| Selector { selectors: list.0 })
+
+        SelectorList::parse(&Parser, &mut parser, ParseRelative::No)
+            .map(|selectors| Self { selectors })
+            .map_err(SelectorErrorKind::from)
     }
 
     /// Returns true if the element matches this selector.
@@ -38,24 +40,29 @@ impl Selector {
     /// The optional `scope` argument is used to specify which element has `:scope` pseudo-class.
     /// When it is `None`, `:scope` will match the root element.
     pub fn matches_with_scope(&self, element: &ElementRef, scope: Option<ElementRef>) -> bool {
+        let mut nth_index_cache = Default::default();
         let mut context = matching::MatchingContext::new(
             matching::MatchingMode::Normal,
             None,
-            None,
+            &mut nth_index_cache,
             matching::QuirksMode::NoQuirks,
+            matching::NeedsSelectorFlags::No,
+            matching::IgnoreNthChildForInvalidation::No,
         );
         context.scope_element = scope.map(|x| selectors::Element::opaque(&x));
         self.selectors
+            .0
             .iter()
-            .any(|s| matching::matches_selector(s, 0, None, element, &mut context, &mut |_, _| {}))
+            .any(|s| matching::matches_selector(s, 0, None, element, &mut context))
     }
 }
 
-impl<'i> TryFrom<&'i str> for Selector {
-    type Error = cssparser::ParseError<'i, SelectorParseErrorKind<'i>>;
-
-    fn try_from(s: &'i str) -> Result<Self, Self::Error> {
-        Selector::parse(s)
+impl ToCss for Selector {
+    fn to_css<W>(&self, dest: &mut W) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        self.selectors.to_css(dest)
     }
 }
 
@@ -72,17 +79,63 @@ impl<'i> parser::Parser<'i> for Parser {
 pub struct Simple;
 
 impl parser::SelectorImpl for Simple {
-    type ExtraMatchingData = InvalidationMatchingData;
-    type AttrValue = AtomString;
-    type Identifier = AtomString;
-    type LocalName = AtomString;
-    type NamespacePrefix = AtomString;
-    type NamespaceUrl = AtomString;
-    type BorrowedNamespaceUrl = AtomString;
-    type BorrowedLocalName = AtomString;
+    type AttrValue = CssString;
+    type Identifier = CssLocalName;
+    type LocalName = CssLocalName;
+    type NamespacePrefix = CssLocalName;
+    type NamespaceUrl = Namespace;
+    type BorrowedNamespaceUrl = Namespace;
+    type BorrowedLocalName = CssLocalName;
 
-    type PseudoElement = PseudoElement;
     type NonTSPseudoClass = NonTSPseudoClass;
+    type PseudoElement = PseudoElement;
+
+    // see: https://github.com/servo/servo/pull/19747#issuecomment-357106065
+    type ExtraMatchingData<'a> = ();
+}
+
+/// Wraps [`String`] so that it can be used with [`selectors`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CssString(pub String);
+
+impl<'a> From<&'a str> for CssString {
+    fn from(val: &'a str) -> Self {
+        Self(val.to_owned())
+    }
+}
+
+impl AsRef<str> for CssString {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl ToCss for CssString {
+    fn to_css<W>(&self, dest: &mut W) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        cssparser::serialize_string(&self.0, dest)
+    }
+}
+
+/// Wraps [`LocalName`] so that it can be used with [`selectors`]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CssLocalName(pub LocalName);
+
+impl<'a> From<&'a str> for CssLocalName {
+    fn from(val: &'a str) -> Self {
+        Self(val.into())
+    }
+}
+
+impl ToCss for CssLocalName {
+    fn to_css<W>(&self, dest: &mut W) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        dest.write_str(&self.0)
+    }
 }
 
 /// Non Tree-Structural Pseudo-Class.
@@ -101,7 +154,7 @@ impl parser::NonTSPseudoClass for NonTSPseudoClass {
     }
 }
 
-impl cssparser::ToCss for NonTSPseudoClass {
+impl ToCss for NonTSPseudoClass {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result
     where
         W: fmt::Write,
@@ -118,7 +171,7 @@ impl parser::PseudoElement for PseudoElement {
     type Impl = Simple;
 }
 
-impl cssparser::ToCss for PseudoElement {
+impl ToCss for PseudoElement {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result
     where
         W: fmt::Write,
@@ -127,29 +180,11 @@ impl cssparser::ToCss for PseudoElement {
     }
 }
 
-/// A struct holding the members necessary to invalidate document state
-/// selectors.
-pub struct InvalidationMatchingData {
-    /// The document state that has changed, which makes it always match.
-    pub document_state: DocumentState,
-}
+impl<'i> TryFrom<&'i str> for Selector {
+    type Error = SelectorErrorKind<'i>;
 
-impl Default for InvalidationMatchingData {
-    #[inline(always)]
-    fn default() -> Self {
-        Self {
-            document_state: DocumentState::empty(),
-        }
-    }
-}
-
-bitflags::bitflags! {
-    /// Event-based document states.
-    pub struct DocumentState: u64 {
-        /// RTL locale: specific to the XUL localedir attribute
-        const NS_DOCUMENT_STATE_RTL_LOCALE = 1 << 0;
-        /// Window activation status
-        const NS_DOCUMENT_STATE_WINDOW_INACTIVE = 1 << 1;
+    fn try_from(s: &'i str) -> Result<Self, Self::Error> {
+        Selector::parse(s)
     }
 }
 
