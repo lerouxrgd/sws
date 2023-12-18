@@ -51,7 +51,7 @@ impl TreeSink for Html {
 
     // Create an element.
     //
-    // When creating a template element (name.ns.expanded() == expanded_name!(html "template")), an
+    // When creating a template element (name.expanded() == expanded_name!(html "template")), an
     // associated document fragment called the "template contents" should also be created. Later
     // calls to self.get_template_contents() with that given element return it.
     fn create_element(
@@ -60,12 +60,16 @@ impl TreeSink for Html {
         attrs: Vec<Attribute>,
         _flags: ElementFlags,
     ) -> Self::Handle {
+        let fragment = name.expanded() == expanded_name!(html "template");
+
         let node_id = self
             .tree
             .orphan(Node::Element(Element::new(name.clone(), attrs)));
-        if name.expanded() == expanded_name!(html "template") {
+
+        if fragment {
             self.tree.get(node_id).unwrap().append(Node::Fragment);
         }
+
         node_id
     }
 

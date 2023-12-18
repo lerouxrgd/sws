@@ -3,6 +3,7 @@
 mod element;
 mod serializable;
 
+use std::iter::FusedIterator;
 use std::ops::Deref;
 
 use html5ever::serialize::{serialize, SerializeOpts, TraversalScope};
@@ -133,6 +134,8 @@ impl Iterator for Select {
         None
     }
 }
+
+impl FusedIterator for Select {}
 
 /// Iterator over descendent text nodes.
 #[derive(Debug, Clone)]
