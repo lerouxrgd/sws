@@ -41,7 +41,7 @@ impl Scrapable for LuaScraper {
 
         let sws = lua.create_table()?;
         globals.set(globals::SWS, sws)?;
-        lua.load(&fs::read_to_string(&config.script)?).exec()?;
+        lua.load(&fs_err::read_to_string(&config.script)?).exec()?;
         let _: Function = globals.get(globals::SCRAP_PAGE)?;
 
         if globals
@@ -135,7 +135,7 @@ impl Scrapable for LuaScraper {
 
             let mut wtr = match &config.csv_file {
                 Some(path) => {
-                    let opts: fs::OpenOptions = config
+                    let opts: fs_err::OpenOptions = config
                         .file_mode
                         .as_ref()
                         .map(Clone::clone)
@@ -236,7 +236,7 @@ impl TryFrom<&LuaScraperConfig> for CrawlerConfig {
 
         let sws = lua.create_table()?;
         globals.set(globals::SWS, sws)?;
-        lua.load(&fs::read_to_string(&c.script)?).exec()?;
+        lua.load(&fs_err::read_to_string(&c.script)?).exec()?;
 
         let crawler_config: CrawlerConfig = globals
             .get::<_, mlua::Table>(globals::SWS)?

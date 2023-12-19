@@ -1,4 +1,4 @@
-use std::{fs, io};
+use std::io;
 
 use serde::{Deserialize, Serialize};
 
@@ -65,7 +65,7 @@ impl From<&CsvWriterConfig> for csv::WriterBuilder {
 }
 
 pub enum CsvWriter {
-    File(csv::Writer<fs::File>),
+    File(csv::Writer<fs_err::File>),
     Stdout(csv::Writer<io::Stdout>),
 }
 
@@ -102,9 +102,9 @@ impl Default for FileMode {
     }
 }
 
-impl From<FileMode> for fs::OpenOptions {
+impl From<FileMode> for fs_err::OpenOptions {
     fn from(mode: FileMode) -> Self {
-        let mut opts = fs::OpenOptions::new();
+        let mut opts = fs_err::OpenOptions::new();
         opts.write(true);
         match mode {
             FileMode::Create => opts.create_new(true),
