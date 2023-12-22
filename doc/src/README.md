@@ -1,7 +1,7 @@
 # Introduction
 
-Sitemap Web Scraper, or [sws][], is a tool for simple, flexible, and yet performant web
-pages scraping. It consists of a [CLI][] that executes a [Lua][] [JIT][lua-jit] script
+Sitemap Web Scraper ([sws][]) is a tool for simple, flexible, and yet performant web
+pages scraping. It consists of a [CLI][] that executes a [Lua JIT][lua-jit] script
 and outputs a [CSV][] file.
 
 All the logic for crawling/scraping is defined in Lua and executed on a multiple threads
@@ -26,8 +26,7 @@ Rust program.
 [sws]: https://github.com/lerouxrgd/sws
 [cli]: https://en.wikipedia.org/wiki/Command-line_interface
 [rust]: https://www.rust-lang.org/
-[lua]: https://www.lua.org/
-[lua-jit]: https://luajit.org/
+[lua-jit]: https://luajit.org/luajit.html
 [csv]: https://en.wikipedia.org/wiki/Comma-separated_values
 [css-sel]: https://www.w3schools.com/cssref/css_selectors.asp
 [html5ever]: https://crates.io/crates/html5ever
