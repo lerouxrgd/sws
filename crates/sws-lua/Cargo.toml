@@ -3,6 +3,8 @@ name = "sws-lua"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "Scraper scriptable in Lua"
+repository = "https://github.com/lerouxrgd/sws"
 
 [dependencies]
 anyhow = "1"
@@ -15,6 +17,6 @@ log = "0.4"
 mlua = { version = "0.9", features = ["luajit", "vendored", "serialize"] }
 once_cell = "1"
 serde = { version = "1", features = ["derive"] }
-sws-crawler = { path = "../sws-crawler" }
-sws-scraper = { path = "../sws-scraper" }
+sws-crawler = { path = "../sws-crawler", version = "0.1" }
+sws-scraper = { path = "../sws-scraper", version = "0.2" }
 texting_robots = "0.2"

@@ -3,6 +3,8 @@ name = "sws-scraper"
 version = "0.2.4"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "HTML parsing and querying with CSS selectors"
+repository = "https://github.com/lerouxrgd/sws"
 
 [dependencies]
 cssparser = "0.31"

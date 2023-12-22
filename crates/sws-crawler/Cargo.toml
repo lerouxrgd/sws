@@ -3,6 +3,8 @@ name = "sws-crawler"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "Web crawler with plugable scraping logic"
+repository = "https://github.com/lerouxrgd/sws"
 
 [dependencies]
 anyhow = "1"

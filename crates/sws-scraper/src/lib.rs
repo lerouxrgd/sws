@@ -1,3 +1,11 @@
+//! HTML parsing and querying with CSS selectors.
+//!
+//! Partial port of [scraper][] using [sws-tree][] which uses [`Rc`](std::rc::Rc)
+//! instead of references with lifetimes.
+//!
+//! [scraper]: https://crates.io/crates/scraper
+//! [sws-tree]: https://crates.io/crates/sws-tree
+
 #[macro_use]
 extern crate html5ever;
 

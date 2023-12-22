@@ -4,6 +4,7 @@ version = "1.0.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Slotmap-backed ID-tree"
+repository = "https://github.com/lerouxrgd/sws"
 
 [dependencies]
 slotmap = "1"
