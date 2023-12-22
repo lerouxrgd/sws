@@ -308,13 +308,10 @@ impl<T> NodeRef<T> {
                 .map(|child| child.id)
                 .unwrap_or_else(NodeId::null);
 
-            tree.sm
-                .borrow_mut()
-                .get_mut(new_child_id)
-                .map(|new_child| {
-                    new_child.parent = self.id;
-                    new_child.prev_sibling = last_child_id;
-                });
+            tree.sm.borrow_mut().get_mut(new_child_id).map(|new_child| {
+                new_child.parent = self.id;
+                new_child.prev_sibling = last_child_id;
+            });
 
             tree.sm
                 .borrow_mut()
@@ -346,13 +343,10 @@ impl<T> NodeRef<T> {
                 .map(|child| child.id)
                 .unwrap_or_else(NodeId::null);
 
-            tree.sm
-                .borrow_mut()
-                .get_mut(new_child_id)
-                .map(|new_child| {
-                    new_child.parent = self.id;
-                    new_child.next_sibling = first_child_id;
-                });
+            tree.sm.borrow_mut().get_mut(new_child_id).map(|new_child| {
+                new_child.parent = self.id;
+                new_child.next_sibling = first_child_id;
+            });
 
             tree.sm
                 .borrow_mut()
